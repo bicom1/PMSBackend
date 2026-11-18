@@ -100,6 +100,7 @@ export function registerRoutes(app) {
   doctorRouter.patch('/patients/:id/consultation', validate(schemas.consultationSchema), submissions.consultation);
   app.use('/api/doctor', doctorRouter);
 
+  app.get('/api/inbox', requireAuth, authorize(...staff), submissions.inbox);
   app.get('/api/manager/dashboard', requireAuth, authorize(...staff), submissions.managerHome);
   app.get('/api/admin/dashboard', requireAuth, authorize(ROLES.ADMIN), submissions.adminHome);
 

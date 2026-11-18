@@ -7,7 +7,7 @@ export function notFound(req, res) {
 
 export function errorHandler(err, req, res, _next) {
   if (err?.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ success: false, message: 'PDF exceeds the 10 MB limit' });
+    return res.status(400).json({ success: false, message: 'File exceeds the 10 MB limit' });
   }
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     return res.status(400).json({ success: false, message: 'Invalid JSON body' });

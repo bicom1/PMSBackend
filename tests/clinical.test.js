@@ -127,10 +127,10 @@ describe('booking, doctor access, clinical records, and documents', () => {
   it('accepts a real PDF and rejects invalid files and unauthorized access', async () => {
     const { created } = await bookedSkin();
     const id = created.body.data.submission.id;
-    const badExt = await request(app).post(`/api/submissions/${id}/documents`).set('Authorization', `Bearer ${manager}`).attach('files', Buffer.from('hello'), { filename: 'note.txt', contentType: 'text/plain' });
+    const badExt = await request(app).post(`/api/submissions/${id}/documents`).set('Authorization', `Bearer ${manager}`).attach('files', Buffer.from('hello'), { filename: 'note.exe', contentType: 'application/octet-stream' });
     expect(badExt.status).toBe(400);
-    const badSignature = await request(app).post(`/api/submissions/${id}/documents`).set('Authorization', `Bearer ${manager}`).attach('files', Buffer.from('not a pdf'), { filename: 'fake.pdf', contentType: 'application/pdf' });
-    expect(badSignature.status).toBe(400);
+    const notes = await request(app).post(`/api/submissions/${id}/documents`).set('Authorization', `Bearer ${manager}`).attach('files', Buffer.from('hello'), { filename: 'note.txt', contentType: 'text/plain' });
+    expect(notes.status).toBe(201);
     const tooBig = Buffer.alloc(10 * 1024 * 1024 + 20, 1);
     tooBig.write('%PDF-1.4', 0);
     const oversized = await request(app).post(`/api/submissions/${id}/documents`).set('Authorization', `Bearer ${manager}`).attach('files', tooBig, { filename: 'large.pdf', contentType: 'application/pdf' });

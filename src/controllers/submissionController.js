@@ -4,6 +4,7 @@ import * as clinical from '../services/clinicalService.js';
 import * as documents from '../services/documentService.js';
 import * as dashboard from '../services/dashboardService.js';
 import * as notifications from '../services/notificationService.js';
+import { listUnreadSubmissions } from '../services/recordViewService.js';
 
 export const create = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await submissions.createSubmission(req.body, req.user, req) });
@@ -37,6 +38,10 @@ export const consultation = asyncHandler(async (req, res) => {
 export const myPatients = asyncHandler(async (req, res) => {
   const data = await submissions.listMyPatients(req.query, req.user);
   res.json({ success: true, ...data });
+});
+
+export const inbox = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await listUnreadSubmissions(req.user) });
 });
 
 export const notificationsList = asyncHandler(async (req, res) => {
@@ -79,7 +84,7 @@ export const upload = asyncHandler(async (req, res) => {
 
 export const viewDocument = asyncHandler(async (req, res) => {
   const file = await documents.readDocument(req.params.id, req.user, req, 'VIEW');
-  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
   res.setHeader('Content-Disposition', `inline; filename="${file.filename.replace(/"/g, '')}"`);
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -88,7 +93,7 @@ export const viewDocument = asyncHandler(async (req, res) => {
 
 export const downloadDocument = asyncHandler(async (req, res) => {
   const file = await documents.readDocument(req.params.id, req.user, req, 'DOWNLOAD');
-  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename="${file.filename.replace(/"/g, '')}"`);
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');

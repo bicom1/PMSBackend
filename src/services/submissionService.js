@@ -19,7 +19,8 @@ import { buildSubmissionFilter } from './submissionQuery.js';
 import { getSubmissionForActor } from './accessService.js';
 import { loadPrescriptions, loadRemarks } from './clinicalService.js';
 import { writeAudit } from './auditService.js';
-import { notifyDoctorOfPatient } from './notificationService.js';
+import { markSubmissionNotificationsRead, notifyDoctorOfPatient } from './notificationService.js';
+import { applyUnread, markRecordOpened, openedIdSet } from './recordViewService.js';
 import { AUDIT, BOOKING_STATUS, CONSULTATION_STATUS, ROLES, SURGERY_SELECTS } from '../constants/index.js';
 
 async function optionLabel(type, value) {
@@ -214,7 +215,7 @@ async function historyFor(patient, anchor, actor) {
           patientCode: other?.patientCode,
           patientName: other?.fullName,
           linked: true,
-          submissions: submissions.map((item) => presentSubmission(item)),
+          submissions: await decorateHistory(submissions, actor, anchor),
         });
       }
     }
@@ -239,14 +240,25 @@ async function historyFor(patient, anchor, actor) {
 }
 
 async function decorateHistory(submissions, actor, anchor) {
-  if (actor.role === ROLES.CLINIC_MANAGER) return submissions.map((item) => presentSubmission(item));
   const ids = submissions.map((item) => item._id);
+  const [skins, surgeries] = await Promise.all([
+    SkinSubmissionDetail.find({ submission: { $in: ids } }).lean(),
+    SurgerySubmissionDetail.find({ submission: { $in: ids } }).lean(),
+  ]);
+  const skinById = new Map(skins.map((item) => [String(item.submission), item]));
+  const surgeryById = new Map(surgeries.map((item) => [String(item.submission), item]));
+  const detailed = submissions.map((item) => ({
+    ...presentSubmission(item),
+    skinDetails: skinById.get(String(item._id)) || null,
+    surgeryDetails: surgeryById.get(String(item._id)) || null,
+  }));
+  if (actor.role === ROLES.CLINIC_MANAGER) return detailed;
   const prescriptions = await loadPrescriptions(ids, actor, anchor);
   const remarks = await loadRemarks(ids, actor, anchor);
-  return submissions.map((item) => ({
-    ...presentSubmission(item),
-    prescriptions: prescriptions.filter((entry) => String(entry.submissionId) === String(item._id)).map((entry) => ({ ...entry, canEdit: false })),
-    remarks: remarks.filter((entry) => String(entry.submissionId) === String(item._id)).map((entry) => ({ ...entry, canEdit: false })),
+  return detailed.map((item) => ({
+    ...item,
+    prescriptions: prescriptions.filter((entry) => String(entry.submissionId) === String(item.id)).map((entry) => ({ ...entry, canEdit: false })),
+    remarks: remarks.filter((entry) => String(entry.submissionId) === String(item.id)).map((entry) => ({ ...entry, canEdit: false })),
   }));
 }
 
@@ -281,6 +293,8 @@ export async function getSubmissionDetail(id, actor) {
     includeClinical ? loadRemarks([submission._id], actor, submission) : [],
     historyFor(patient, submission, actor),
   ]);
+  await markRecordOpened(actor._id, 'SUBMISSION', submission._id);
+  await markSubmissionNotificationsRead(actor, submission._id);
   return {
     submission: presentSubmission(submission),
     patient: presentPatient(patient, { includeCnic: true }),
@@ -292,6 +306,12 @@ export async function getSubmissionDetail(id, actor) {
     history,
     capabilities: capabilitiesFor(actor, submission),
   };
+}
+
+async function withUnreadSubmissions(items, actor) {
+  const presented = items.map(presentSubmission);
+  const opened = await openedIdSet(actor._id, 'SUBMISSION', presented.map((item) => item.id));
+  return applyUnread(presented, opened);
 }
 
 export async function listSubmissions(query, actor) {
@@ -308,7 +328,7 @@ export async function listSubmissions(query, actor) {
     Submission.find(filter).sort(sort).skip(skip).limit(limit).lean(),
     Submission.countDocuments(filter),
   ]);
-  return { items: items.map(presentSubmission), meta: pageMeta(total, page, limit) };
+  return { items: await withUnreadSubmissions(items, actor), meta: pageMeta(total, page, limit) };
 }
 
 export async function listMyPatients(query, actor) {
@@ -323,7 +343,7 @@ export async function listMyPatients(query, actor) {
     Submission.find(filter).sort(sort).skip(skip).limit(limit).lean(),
     Submission.countDocuments(filter),
   ]);
-  return { items: items.map(presentSubmission), meta: pageMeta(total, page, limit) };
+  return { items: await withUnreadSubmissions(items, actor), meta: pageMeta(total, page, limit) };
 }
 
 export async function updateBooking(id, input, actor, req) {
@@ -406,14 +426,16 @@ export async function updateOperationalRemark(id, text, actor, req) {
   }
   const submission = await Submission.findOne({ _id: id, isDeleted: false });
   if (!submission) throw new ApiError(404, 'Submission not found');
+  const next = text.trim();
+  if (next === (submission.operationalRemark || '')) return presentSubmission(submission);
   const previous = submission.operationalRemark;
   submission.operationalRemarkHistory.push({
-    text: text.trim(),
+    text: next,
     author: actor._id,
     authorName: actor.fullName,
     at: new Date(),
   });
-  submission.operationalRemark = text.trim();
+  submission.operationalRemark = next;
   await submission.save();
   await writeAudit({
     actor,

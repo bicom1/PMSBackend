@@ -17,6 +17,7 @@ import { parsePaging, pageMeta } from '../utils/http.js';
 import { presentPatient } from '../utils/presenters.js';
 import { writeAudit } from './auditService.js';
 import { assertCanAccessPatient } from './accessService.js';
+import { applyUnread, markRecordOpened, openedIdSet } from './recordViewService.js';
 import { AUDIT, BOOKING_STATUS, DEPARTMENT_CODES, GENDERS, ROLES } from '../constants/index.js';
 
 export async function nextPatientCode(departmentCode, session) {
@@ -454,8 +455,10 @@ export async function listPatients(query, actor) {
     Patient.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     Patient.countDocuments(filter),
   ]);
+  const presented = items.map((patient) => presentPatient(patient, { includeCnic: false }));
+  const opened = await openedIdSet(actor._id, 'PATIENT', presented.map((patient) => patient.id));
   return {
-    items: items.map((patient) => presentPatient(patient, { includeCnic: false })),
+    items: applyUnread(presented, opened),
     meta: pageMeta(total, page, limit),
   };
 }
@@ -474,6 +477,7 @@ export async function getPatient(id, actor) {
       }
     }
   }
+  await markRecordOpened(actor._id, 'PATIENT', patient._id);
   return { patient: presentPatient(patient, { includeCnic: true }), linked };
 }
 

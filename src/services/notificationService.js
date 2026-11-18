@@ -66,6 +66,13 @@ export async function listNotifications(actor) {
   return { items: items.map(present), unread };
 }
 
+export async function markSubmissionNotificationsRead(actor, submissionId) {
+  await Notification.updateMany(
+    { recipient: actor._id, submission: submissionId, readAt: null },
+    { readAt: new Date() },
+  );
+}
+
 export async function markNotificationsRead(actor, { ids = [], all = false } = {}) {
   const filter = { recipient: actor._id, readAt: null };
   if (!all) filter._id = { $in: ids };

@@ -7,6 +7,13 @@ import { getAnalytics } from './reportService.js';
 import { ApiError } from '../utils/ApiError.js';
 import { BOOKING_STATUS, CONSULTATION_STATUS, ROLES } from '../constants/index.js';
 import { listNotifications } from './notificationService.js';
+import { applyUnread, openedIdSet } from './recordViewService.js';
+
+async function recentWithUnread(recent, actor) {
+  const presented = recent.map(presentSubmission);
+  const opened = await openedIdSet(actor._id, 'SUBMISSION', presented.map((item) => item.id));
+  return applyUnread(presented, opened);
+}
 
 async function departmentBreakdown() {
   const [patients, submissions] = await Promise.all([
@@ -42,7 +49,7 @@ export async function managerDashboard(actor) {
     booked,
     notBooked,
     todayRegistrations,
-    recent: recent.map(presentSubmission),
+    recent: await recentWithUnread(recent, actor),
     departmentStats,
     analytics,
   };
@@ -68,7 +75,7 @@ export async function doctorDashboard(actor) {
     pendingConsultations,
     completedConsultations,
     unreadNotifications: notices.unread,
-    recent: recent.map(presentSubmission),
+    recent: await recentWithUnread(recent, actor),
   };
 }
 

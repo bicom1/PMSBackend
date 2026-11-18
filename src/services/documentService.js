@@ -9,17 +9,19 @@ import { getSubmissionForActor } from './accessService.js';
 import { writeAudit } from './auditService.js';
 import { AUDIT, ROLES } from '../constants/index.js';
 
-function assertPdf(file) {
-  const name = String(file?.originalname || '').toLowerCase();
-  if (!name.endsWith('.pdf') || file.mimetype !== 'application/pdf') {
-    throw new ApiError(400, 'Only PDF documents are allowed');
-  }
-  const buffer = file.buffer;
-  if (!buffer || buffer.length < 5 || buffer.subarray(0, 5).toString('utf8') !== '%PDF-') {
-    throw new ApiError(400, 'The file signature is not a valid PDF');
-  }
-  if (buffer.length > env.maxFileSize) throw new ApiError(400, 'PDF exceeds the 10 MB limit');
-  return buffer;
+const blockedExtensions = new Set(['exe', 'bat', 'cmd', 'com', 'msi', 'dll', 'scr', 'ps1', 'vbs', 'js', 'jar', 'sh', 'hta', 'cpl', 'msc']);
+
+function extensionOf(name) {
+  return (String(name || '').toLowerCase().match(/\.([a-z0-9]{1,8})$/) || [])[1] || '';
+}
+
+function assertFile(file) {
+  const extension = extensionOf(file?.originalname);
+  const buffer = file?.buffer;
+  if (!extension || blockedExtensions.has(extension)) throw new ApiError(400, 'This file type cannot be uploaded');
+  if (!buffer?.length) throw new ApiError(400, 'The file is empty');
+  if (buffer.length > env.maxFileSize) throw new ApiError(400, 'File exceeds the 10 MB limit');
+  return { buffer, extension, mimeType: file.mimetype || 'application/octet-stream' };
 }
 
 async function logAccess(document, actor, action, req) {
@@ -46,19 +48,19 @@ export async function uploadDocuments(submissionId, files, actor, req) {
   if (![ROLES.ADMIN, ROLES.CLINIC_MANAGER].includes(actor.role)) {
     throw new ApiError(403, 'You do not have permission to upload documents');
   }
-  if (!files?.length) throw new ApiError(400, 'Choose at least one PDF');
+  if (!files?.length) throw new ApiError(400, 'Choose at least one file');
   const submission = await getSubmissionForActor(actor, submissionId);
   const storage = await getStorage();
   const created = [];
   for (const file of files) {
-    const buffer = assertPdf(file);
-    const saved = await storage.savePdf(buffer);
+    const { buffer, extension, mimeType } = assertFile(file);
+    const saved = await storage.saveFile(buffer, { extension, contentType: mimeType });
     const document = await Document.create({
       submission: submission._id,
       patient: submission.patient,
       originalFilename: safeFilename(file.originalname),
       storageKey: saved.storageKey,
-      mimeType: 'application/pdf',
+      mimeType,
       size: buffer.length,
       checksum: crypto.createHash('sha256').update(buffer).digest('hex'),
       uploadedBy: actor._id,
@@ -94,9 +96,9 @@ async function loadReadable(documentId, actor) {
 export async function readDocument(documentId, actor, req, action) {
   const document = await loadReadable(documentId, actor);
   const storage = await getStorage();
-  const buffer = await storage.openPdf(document.storageKey);
+  const buffer = await storage.openFile(document.storageKey);
   await logAccess(document, actor, action, req);
-  return { buffer, filename: document.originalFilename };
+  return { buffer, filename: document.originalFilename, mimeType: document.mimeType || 'application/octet-stream' };
 }
 
 export async function deleteDocument(documentId, actor, req, reason = '') {

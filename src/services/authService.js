@@ -7,7 +7,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { sha256 } from '../utils/crypto.js';
 import { presentUser } from '../utils/presenters.js';
 import { writeAudit } from './auditService.js';
-import { AUDIT } from '../constants/index.js';
+import { AUDIT, ROLES } from '../constants/index.js';
 
 const COOKIE = 'cpms_refresh';
 export const BCRYPT_ROUNDS = process.env.NODE_ENV === 'test' ? 4 : 12;
@@ -152,6 +152,9 @@ export async function logout(token, res) {
 }
 
 export async function changePassword(actor, { currentPassword, newPassword }, req) {
+  if (actor?.role !== ROLES.ADMIN) {
+    throw new ApiError(403, 'Only an administrator can change passwords');
+  }
   const user = await User.findById(actor._id).select('+passwordHash +refreshTokens');
   const matches = await bcrypt.compare(currentPassword, user.passwordHash);
   if (!matches) throw new ApiError(400, 'Current password is incorrect');
