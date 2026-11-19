@@ -82,9 +82,22 @@ export const upload = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data });
 });
 
+const inlineTypes = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  bmp: 'image/bmp', svg: 'image/svg+xml', txt: 'text/plain', csv: 'text/csv', json: 'application/json', html: 'text/html',
+  htm: 'text/html', mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav',
+};
+
+function inlineContentType(filename, mimeType) {
+  const current = String(mimeType || '').split(';')[0].trim().toLowerCase();
+  const extension = (String(filename || '').toLowerCase().match(/\.([a-z0-9]{1,8})$/) || [])[1] || '';
+  if (current && current !== 'application/octet-stream') return current;
+  return inlineTypes[extension] || current || 'application/octet-stream';
+}
+
 export const viewDocument = asyncHandler(async (req, res) => {
   const file = await documents.readDocument(req.params.id, req.user, req, 'VIEW');
-  res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
+  res.setHeader('Content-Type', inlineContentType(file.filename, file.mimeType));
   res.setHeader('Content-Disposition', `inline; filename="${file.filename.replace(/"/g, '')}"`);
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');

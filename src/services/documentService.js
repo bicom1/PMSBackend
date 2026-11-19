@@ -18,10 +18,10 @@ function extensionOf(name) {
 function assertFile(file) {
   const extension = extensionOf(file?.originalname);
   const buffer = file?.buffer;
-  if (!extension || blockedExtensions.has(extension)) throw new ApiError(400, 'This file type cannot be uploaded');
+  if (blockedExtensions.has(extension)) throw new ApiError(400, 'Program files cannot be uploaded');
   if (!buffer?.length) throw new ApiError(400, 'The file is empty');
   if (buffer.length > env.maxFileSize) throw new ApiError(400, 'File exceeds the 10 MB limit');
-  return { buffer, extension, mimeType: file.mimetype || 'application/octet-stream' };
+  return { buffer, extension: extension || 'bin', mimeType: file.mimetype || 'application/octet-stream' };
 }
 
 async function logAccess(document, actor, action, req) {
@@ -54,7 +54,13 @@ export async function uploadDocuments(submissionId, files, actor, req) {
   const created = [];
   for (const file of files) {
     const { buffer, extension, mimeType } = assertFile(file);
-    const saved = await storage.saveFile(buffer, { extension, contentType: mimeType });
+    let saved;
+    try {
+      saved = await storage.saveFile(buffer, { extension, contentType: mimeType });
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(503, 'The file could not be stored. Try again.');
+    }
     const document = await Document.create({
       submission: submission._id,
       patient: submission.patient,

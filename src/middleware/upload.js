@@ -13,8 +13,8 @@ const upload = multer({
   limits: { fileSize: env.maxFileSize, files: 10 },
   fileFilter: (_req, file, callback) => {
     const extension = extensionOf(file.originalname);
-    if (!extension || blockedExtensions.has(extension)) {
-      return callback(new ApiError(400, 'This file type cannot be uploaded'));
+    if (blockedExtensions.has(extension)) {
+      return callback(new ApiError(400, 'Program files cannot be uploaded'));
     }
     return callback(null, true);
   },
