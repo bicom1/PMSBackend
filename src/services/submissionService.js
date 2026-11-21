@@ -26,18 +26,28 @@ import { applyUnread, markRecordOpened, openedIdSet } from './recordViewService.
 import PDFDocument from 'pdfkit';
 import { AUDIT, BOOKING_STATUS, CONSULTATION_STATUS, ROLES, SURGERY_SELECTS } from '../constants/index.js';
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function optionLabel(type, value) {
-  if (!value) return { value: '', label: '' };
-  const record = await MasterData.findOne({ type, value, isActive: true });
-  if (!record) throw new ApiError(400, `Select a valid ${type.replaceAll('_', ' ').toLowerCase()}`);
-  return { value: record.value, label: record.label };
+  const text = String(value || '').trim();
+  if (!text) return { value: '', label: '' };
+  const record = await MasterData.findOne({ type, value: text, isActive: true });
+  if (record) return { value: record.value, label: record.label, allowOther: record.allowOther };
+  const byLabel = await MasterData.findOne({
+    type,
+    isActive: true,
+    label: new RegExp(`^${escapeRegex(text)}$`, 'i'),
+  });
+  if (byLabel) return { value: byLabel.value, label: byLabel.label, allowOther: byLabel.allowOther };
+  return { value: text.slice(0, 80), label: text.slice(0, 80), allowOther: false };
 }
 
 async function assertChoice(type, value, label) {
-  const record = await MasterData.findOne({ type, value, isActive: true });
-  if (!record) throw new ApiError(400, `${label} is invalid`);
-  if (record.allowOther) return record;
-  return record;
+  const resolved = await optionLabel(type, value);
+  if (!resolved.value) throw new ApiError(400, `${label} is required`);
+  return resolved;
 }
 
 export async function createSubmission(payload, actor, req) {

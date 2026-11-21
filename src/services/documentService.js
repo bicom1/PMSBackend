@@ -39,7 +39,11 @@ async function logAccess(document, actor, action, req) {
     action: action === 'VIEW' ? AUDIT.DOCUMENT_VIEWED : action === 'DOWNLOAD' ? AUDIT.DOCUMENT_DOWNLOADED : AUDIT.DOCUMENT_DELETED,
     entityType: 'Document',
     entityId: document._id,
-    newValue: { filename: document.originalFilename, submissionId: document.submission },
+    newValue: {
+      filename: document.originalFilename,
+      submissionId: document.submission,
+      ...(document.deleteReason ? { reason: document.deleteReason } : {}),
+    },
     req,
   });
 }

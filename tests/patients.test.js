@@ -100,6 +100,31 @@ describe('patient registration and identification', () => {
     expect(codes.size).toBe(5);
   });
 
+  it('accepts a typed value when it is not in the dropdown', async () => {
+    const created = await helpers.postIntake(app, manager, helpers.intakePayload(fx, {
+      departmentCode: 'SURGERY',
+      patient: { nationality: 'Afghanistan', occupation: 'Pilot', city: 'Gilgit' },
+      visit: { weightKg: 22.5, heightCm: 215, referredBy: 'Instagram' },
+      surgeryDetails: {
+        anesthesiaType: 'Local with sedation',
+        diet: 'Clear liquids',
+        bloodTestStatus: 'Sent out',
+        locationOfSurgery: 'Ward 3',
+        mri: 'Booked externally',
+        followUpSessions: 18,
+      },
+    }));
+    expect(created.status).toBe(201);
+    expect(created.body.data.patient.nationality).toBe('Afghanistan');
+    expect(created.body.data.patient.city).toBe('Gilgit');
+    expect(created.body.data.patient.occupation).toBe('Pilot');
+    expect(created.body.data.submission.heightCm).toBe(215);
+    expect(created.body.data.submission.referredByLabel).toBe('Instagram');
+    const detail = await request(app).get(`/api/submissions/${created.body.data.submission.id}`).set('Authorization', `Bearer ${manager}`);
+    expect(detail.body.data.surgeryDetails.locationOfSurgeryLabel).toBe('Ward 3');
+    expect(detail.body.data.surgeryDetails.followUpSessions).toBe(18);
+  });
+
   it('prevents two simultaneous records for the same CNIC', async () => {
     const payload = helpers.intakePayload(fx);
     const [first, second] = await Promise.all([

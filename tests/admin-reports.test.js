@@ -141,6 +141,9 @@ describe('administration, audit, and reports', () => {
     expect(logs.body.items.some((item) => item.action === 'MASTER_DATA_CHANGED')).toBe(true);
     const hidden = await request(app).get('/api/audit-logs').set('Authorization', `Bearer ${manager}`);
     expect(hidden.status).toBe(403);
+    const doctor = await helpers.tokenFor(app, 'dr.skin');
+    const doctorHidden = await request(app).get('/api/audit-logs').set('Authorization', `Bearer ${doctor}`);
+    expect(doctorHidden.status).toBe(403);
     const sample = logs.body.items[0];
     const deleted = await request(app).delete(`/api/audit-logs/${sample._id}`).set('Authorization', `Bearer ${admin}`);
     expect(deleted.status).toBe(403);
