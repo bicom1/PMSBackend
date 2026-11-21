@@ -340,7 +340,7 @@ export async function getSubmissionDetail(id, actor) {
   };
 }
 
-const CLINIC_LOGO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../client/public/enfield-logo.png');
+const CLINIC_LOGO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../assets/enfield-logo.png');
 const CLINIC_SITE = 'www.enfieldroyalclinics.com.pk';
 const CLINIC_PHONE = '0332 5488777';
 const CLINIC_ADDRESS = '3rd Floor, Al-Ammar Center, next to Khyber Bank, F-7 Markaz, Islamabad, 44000';

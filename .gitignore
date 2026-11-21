@@ -8,5 +8,5 @@ dist/
 build/
 *.log
 
-storage/
-storage-test/
+/storage/
+/storage-test/
