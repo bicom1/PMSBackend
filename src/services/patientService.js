@@ -424,6 +424,40 @@ export async function mergePatients(input, actor, req) {
   });
 }
 
+function appointmentOf(patient) {
+  return {
+    id: patient._id,
+    patientCode: patient.patientCode,
+    departmentCode: patient.departmentCode,
+    fullName: patient.fullName,
+  };
+}
+
+async function samePersonRecords(patients) {
+  if (!patients.length) return [];
+  const hashes = [...new Set(patients.map((patient) => patient.cnicHash))];
+  return Patient.find({
+    isDeleted: false,
+    cnicHash: { $in: hashes },
+  }).select('patientCode departmentCode fullName normalizedName cnicHash normalizedPhone');
+}
+
+function matchesSamePerson(left, right) {
+  return left.cnicHash === right.cnicHash
+    && left.normalizedName === right.normalizedName
+    && left.normalizedPhone === right.normalizedPhone
+    && String(left._id) !== String(right._id);
+}
+
+async function otherAppointmentsFor(patients) {
+  const related = await samePersonRecords(patients);
+  const map = new Map();
+  for (const patient of patients) {
+    map.set(String(patient._id), related.filter((item) => matchesSamePerson(patient, item)).map(appointmentOf));
+  }
+  return map;
+}
+
 export async function listPatients(query, actor) {
   const { page, limit, skip } = parsePaging(query);
   const filter = { isDeleted: false };
@@ -455,7 +489,12 @@ export async function listPatients(query, actor) {
     Patient.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     Patient.countDocuments(filter),
   ]);
-  const presented = items.map((patient) => presentPatient(patient, { includeCnic: false }));
+  const staff = [ROLES.ADMIN, ROLES.CLINIC_MANAGER].includes(actor.role);
+  const others = staff ? await otherAppointmentsFor(items) : new Map();
+  const presented = items.map((patient) => ({
+    ...presentPatient(patient, { includeCnic: false }),
+    otherAppointments: others.get(String(patient._id)) || [],
+  }));
   const opened = await openedIdSet(actor._id, 'PATIENT', presented.map((patient) => patient.id));
   return {
     items: applyUnread(presented, opened),
@@ -478,7 +517,13 @@ export async function getPatient(id, actor) {
     }
   }
   await markRecordOpened(actor._id, 'PATIENT', patient._id);
-  return { patient: presentPatient(patient, { includeCnic: true }), linked };
+  const staff = [ROLES.ADMIN, ROLES.CLINIC_MANAGER].includes(actor.role);
+  const related = staff ? await samePersonRecords([patient]) : [];
+  const appointments = staff
+    ? [appointmentOf(patient), ...related.filter((item) => matchesSamePerson(patient, item)).map(appointmentOf)]
+      .sort((left, right) => left.departmentCode.localeCompare(right.departmentCode))
+    : [appointmentOf(patient)];
+  return { patient: presentPatient(patient, { includeCnic: true }), linked, appointments };
 }
 
 export async function correctPatient(id, input, actor, req) {

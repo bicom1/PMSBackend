@@ -73,6 +73,7 @@ export function registerRoutes(app) {
   patientRouter.get('/', validate(schemas.patientListSchema), patients.list);
   patientRouter.post('/link', authorize(...staff), validate(schemas.linkSchema), patients.link);
   patientRouter.post('/merge', authorize(ROLES.ADMIN), validate(schemas.mergeSchema), patients.merge);
+  patientRouter.get('/:id/history.pdf', authorize(...staff), validate(schemas.idSchema), patients.historyPdf);
   patientRouter.get('/:id', validate(schemas.idSchema), patients.getOne);
   patientRouter.patch('/:id', authorize(ROLES.ADMIN), validate(schemas.correctPatientSchema), patients.correct);
   app.use('/api/patients', patientRouter);
@@ -81,6 +82,7 @@ export function registerRoutes(app) {
   submissionRouter.use(requireAuth);
   submissionRouter.post('/', authorize(...staff), validate(schemas.submissionSchema), submissions.create);
   submissionRouter.get('/', validate(schemas.submissionListSchema), submissions.list);
+  submissionRouter.get('/:id/history.pdf', authorize(...staff), validate(schemas.idSchema), submissions.historyPdf);
   submissionRouter.get('/:id', validate(schemas.idSchema), submissions.detail);
   submissionRouter.patch('/:id/booking', authorize(...staff), validate(schemas.bookingSchema), submissions.booking);
   submissionRouter.patch('/:id/doctor', authorize(...staff), validate(schemas.reassignSchema), submissions.reassign);

@@ -1,5 +1,6 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import * as patients from '../services/patientService.js';
+import * as submissions from '../services/submissionService.js';
 
 export const identify = asyncHandler(async (req, res) => {
   res.json({ success: true, data: await patients.identifyPatient(req.body, req.user) });
@@ -12,6 +13,14 @@ export const list = asyncHandler(async (req, res) => {
 
 export const getOne = asyncHandler(async (req, res) => {
   res.json({ success: true, data: await patients.getPatient(req.params.id, req.user) });
+});
+
+export const historyPdf = asyncHandler(async (req, res) => {
+  const file = await submissions.exportMedicalHistory(req.user, { patientId: req.params.id });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(file.buffer);
 });
 
 export const correct = asyncHandler(async (req, res) => {

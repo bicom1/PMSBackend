@@ -4,7 +4,9 @@ import { BOOKING_STATUS, ROLES } from '../constants/index.js';
 
 export function doctorOwnsSubmission(actor, submission) {
   const inDepartment = (actor.departments || []).some((id) => String(id) === String(submission.department));
-  return String(submission.doctor) === String(actor._id) && inDepartment;
+  return String(submission.doctor) === String(actor._id)
+    && inDepartment
+    && submission.bookingStatus === BOOKING_STATUS.BOOKED;
 }
 
 export async function doctorCanAccessSubmission(actor, submission) {
@@ -36,6 +38,7 @@ export async function assertCanAccessPatient(actor, patient) {
       patient: patient._id,
       doctor: actor._id,
       department: { $in: actor.departments || [] },
+      bookingStatus: BOOKING_STATUS.BOOKED,
       isDeleted: false,
     });
     if (own) return patient;

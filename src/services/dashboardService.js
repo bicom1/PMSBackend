@@ -58,7 +58,12 @@ export async function managerDashboard(actor) {
 export async function doctorDashboard(actor) {
   if (actor.role !== ROLES.DOCTOR) throw new ApiError(403, 'You do not have permission to view this dashboard');
   const today = clinicToday();
-  const base = { isDeleted: false, doctor: actor._id, department: { $in: actor.departments || [] } };
+  const base = {
+    isDeleted: false,
+    doctor: actor._id,
+    department: { $in: actor.departments || [] },
+    bookingStatus: BOOKING_STATUS.BOOKED,
+  };
   const [myPatients, totalBooked, todaysPatients, pendingConsultations, completedConsultations, recent, notices] = await Promise.all([
     Submission.countDocuments(base),
     Submission.countDocuments({ ...base, bookingStatus: BOOKING_STATUS.BOOKED }),

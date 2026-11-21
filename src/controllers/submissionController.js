@@ -60,6 +60,14 @@ export const versionPrescription = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: await clinical.addPrescriptionVersion(req.params.id, req.body, req.user, req) });
 });
 
+export const historyPdf = asyncHandler(async (req, res) => {
+  const file = await submissions.exportMedicalHistory(req.user, { submissionId: req.params.id });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(file.buffer);
+});
+
 export const prescriptionPdf = asyncHandler(async (req, res) => {
   const version = req.query.version ? Number(req.query.version) : undefined;
   const file = await clinical.buildPrescriptionPdf(req.params.id, version, req.user);

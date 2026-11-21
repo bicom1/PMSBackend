@@ -40,12 +40,14 @@ describe('booking, doctor access, clinical records, and documents', () => {
     const created = await helpers.postIntake(app, manager, helpers.intakePayload(fx));
     const id = created.body.data.submission.id;
     const before = await request(app).get('/api/doctor/patients').set('Authorization', `Bearer ${skinDoctor}`);
-    expect(before.body.meta.total).toBe(1);
-    const notices = await request(app).get('/api/doctor/notifications').set('Authorization', `Bearer ${skinDoctor}`);
-    expect(notices.body.data.unread).toBeGreaterThan(0);
+    expect(before.body.meta.total).toBe(0);
+    const hidden = await request(app).get(`/api/submissions/${id}`).set('Authorization', `Bearer ${skinDoctor}`);
+    expect(hidden.status).toBe(403);
     const booked = await request(app).patch(`/api/submissions/${id}/booking`).set('Authorization', `Bearer ${manager}`).send({ status: 'BOOKED' });
     expect(booked.body.data.bookingStatus).toBe('BOOKED');
     expect(booked.body.data.bookedAt).toBeTruthy();
+    const notices = await request(app).get('/api/doctor/notifications').set('Authorization', `Bearer ${skinDoctor}`);
+    expect(notices.body.data.unread).toBeGreaterThan(0);
     const mine = await request(app).get('/api/doctor/patients?doctorId=507f1f77bcf86cd799439011').set('Authorization', `Bearer ${skinDoctor}`);
     expect(mine.body.meta.total).toBe(1);
     expect(mine.body.items[0].patientCode).toBe('SKN-000001');
@@ -54,9 +56,9 @@ describe('booking, doctor access, clinical records, and documents', () => {
     const reversed = await request(app).patch(`/api/submissions/${id}/booking`).set('Authorization', `Bearer ${manager}`).send({ status: 'NOT_BOOKED' });
     expect(reversed.body.data.bookingHistory).toHaveLength(2);
     const after = await request(app).get('/api/doctor/patients').set('Authorization', `Bearer ${skinDoctor}`);
-    expect(after.body.meta.total).toBe(1);
-    const visible = await request(app).get(`/api/submissions/${id}`).set('Authorization', `Bearer ${skinDoctor}`);
-    expect(visible.status).toBe(200);
+    expect(after.body.meta.total).toBe(0);
+    const closed = await request(app).get(`/api/submissions/${id}`).set('Authorization', `Bearer ${skinDoctor}`);
+    expect(closed.status).toBe(403);
   });
 
   it('logs doctor reassignment and blocks it after booking for a manager', async () => {
@@ -154,5 +156,37 @@ describe('booking, doctor access, clinical records, and documents', () => {
     expect(access).toBeGreaterThan(0);
     const deletion = await AuditLog.findOne({ action: 'DOCUMENT_DELETED' });
     expect(deletion).toBeTruthy();
+  });
+
+  it('downloads both appointments for admin and clinic manager without giving the manager clinical notes', async () => {
+    const skin = await helpers.postIntake(app, manager, helpers.intakePayload(fx));
+    const surgery = await helpers.postIntake(app, manager, helpers.intakePayload(fx, { departmentCode: 'SURGERY', confirmIdentityLink: true }));
+    const surgeryId = surgery.body.data.submission.id;
+    await request(app).patch(`/api/submissions/${surgeryId}/booking`).set('Authorization', `Bearer ${manager}`).send({ status: 'BOOKED' });
+    const prescription = await request(app).post(`/api/submissions/${surgeryId}/prescriptions`).set('Authorization', `Bearer ${surgeryDoctor}`).send({
+      prescriptionDate: surgery.body.data.submission.formDate,
+      medicines: [{ name: 'Cream A', dose: 'Thin layer', frequency: 'Nightly', duration: '5 days' }],
+    });
+    expect(prescription.status).toBe(201);
+    const managerFile = await request(app).get(`/api/submissions/${skin.body.data.submission.id}/history.pdf`).set('Authorization', `Bearer ${manager}`).buffer(true);
+    expect(managerFile.status).toBe(200);
+    expect(managerFile.headers['content-type']).toMatch(/pdf/);
+    expect(managerFile.headers['content-disposition']).toMatch(/SKN-000001-SRG-000001-medical-history\.pdf/);
+    const pdfText = (body) => [...body.toString('latin1').matchAll(/<([0-9A-Fa-f]+)>/g)].map((match) => Buffer.from(match[1], 'hex').toString('latin1')).join('');
+    const managerText = pdfText(managerFile.body);
+    expect(managerText).not.toContain('Same person, two appointments');
+    expect(managerText).toContain('www.enfieldroyalclinics.com.pk');
+    expect(managerText).toContain('0332 5488777');
+    expect(managerText).toContain('Al-Ammar Center');
+    expect(managerText).toContain('F-7 Markaz');
+    expect(managerText).toContain('SKN-000001');
+    expect(managerText).toContain('SRG-000001');
+    expect(managerText).not.toContain('Cream A');
+    const admin = await helpers.tokenFor(app, 'admin');
+    const adminFile = await request(app).get(`/api/patients/${surgery.body.data.patient.id}/history.pdf`).set('Authorization', `Bearer ${admin}`);
+    expect(adminFile.status).toBe(200);
+    expect(pdfText(adminFile.body)).toContain('Cream A');
+    const denied = await request(app).get(`/api/patients/${skin.body.data.patient.id}/history.pdf`).set('Authorization', `Bearer ${skinDoctor}`);
+    expect(denied.status).toBe(403);
   });
 });
