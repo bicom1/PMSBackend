@@ -1,13 +1,16 @@
 export function normalizeCnic(input) {
-  const digits = String(input || '').replace(/\D/g, '');
-  if (digits.length !== 13) return null;
-  return digits;
+  const compact = String(input || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!/^[A-Z0-9]{6,20}$/.test(compact)) return null;
+  if (/^(\d)\1{12}$/.test(compact)) return null;
+  return compact;
 }
 
 export function formatCnic(digits) {
-  const value = String(digits || '').replace(/\D/g, '');
-  if (value.length !== 13) return value;
-  return `${value.slice(0, 5)}-${value.slice(5, 12)}-${value.slice(12)}`;
+  const compact = String(digits || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (/^\d{13}$/.test(compact)) {
+    return `${compact.slice(0, 5)}-${compact.slice(5, 12)}-${compact.slice(12)}`;
+  }
+  return compact;
 }
 
 export function maskCnicLast4(last4) {

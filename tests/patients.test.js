@@ -125,6 +125,22 @@ describe('patient registration and identification', () => {
     expect(detail.body.data.surgeryDetails.followUpSessions).toBe(18);
   });
 
+  it('accepts an international phone and passport, and rejects incomplete ones', async () => {
+    const created = await helpers.postIntake(app, manager, helpers.intakePayload(fx, {
+      patient: { contactNumber: '+44 7700 900123', cnic: 'P1234567', nationality: 'United Kingdom' },
+    }));
+    expect(created.status).toBe(201);
+    expect(created.body.data.patient.cnic).toBe('P1234567');
+    const badPhone = await helpers.postIntake(app, manager, helpers.intakePayload(fx, {
+      patient: { contactNumber: '12345', cnic: helpers.cnic(9) },
+    }));
+    expect(badPhone.status).toBe(400);
+    const badCnic = await helpers.postIntake(app, manager, helpers.intakePayload(fx, {
+      patient: { cnic: '12345' },
+    }));
+    expect(badCnic.status).toBe(400);
+  });
+
   it('prevents two simultaneous records for the same CNIC', async () => {
     const payload = helpers.intakePayload(fx);
     const [first, second] = await Promise.all([

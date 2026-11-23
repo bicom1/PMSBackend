@@ -78,7 +78,10 @@ async function analyzeIdentity({ departmentId, normalizedPhone, cnicHash, normal
     exactMatch,
     cnicNameConflict,
     phoneConflicts,
-    crossDepartmentCandidate: other ? { patient: other, canAutoLink: other.normalizedName === normalizedName } : null,
+    crossDepartmentCandidate: other ? {
+      patient: other,
+      canAutoLink: other.normalizedName === normalizedName && other.normalizedPhone === normalizedPhone,
+    } : null,
   };
 }
 
@@ -96,7 +99,7 @@ function publicAnalysis(analysis, normalizedPhone) {
     cnicConflict: analysis.cnicNameConflict ? hint(analysis.cnicNameConflict) : null,
     phoneConflicts: analysis.phoneConflicts.map(hint),
     crossDepartmentCandidate: analysis.crossDepartmentCandidate ? {
-      ...hint(analysis.crossDepartmentCandidate.patient),
+      ...fullRecord(analysis.crossDepartmentCandidate.patient),
       canAutoLink: analysis.crossDepartmentCandidate.canAutoLink,
     } : null,
   };
@@ -119,8 +122,8 @@ export async function identifyPatient(input, actor) {
   if (!department) throw new ApiError(400, 'Department not found');
   const normalizedPhone = normalizePhone(input.contactNumber);
   const cnicDigits = normalizeCnic(input.cnic);
-  if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Contact number is invalid');
-  if (!cnicDigits) throw new ApiError(400, 'CNIC must contain 13 digits');
+  if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Enter a phone number with 7 to 15 digits');
+  if (!cnicDigits) throw new ApiError(400, 'Enter a CNIC or passport number, 6 to 20 characters');
   const analysis = await analyzeIdentity({
     departmentId: department._id,
     normalizedPhone,
@@ -190,8 +193,8 @@ async function applyVisitProfile(patient, payload, normalizedPhone, actor, sessi
 export async function preparePatientForSubmission(payload, department, actor, session, req) {
   const normalizedPhone = normalizePhone(payload.patient.contactNumber);
   const cnicDigits = normalizeCnic(payload.patient.cnic);
-  if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Contact number is invalid');
-  if (!cnicDigits) throw new ApiError(400, 'CNIC must contain 13 digits');
+  if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Enter a phone number with 7 to 15 digits');
+  if (!cnicDigits) throw new ApiError(400, 'Enter a CNIC or passport number, 6 to 20 characters');
   assertDemographics(payload.patient);
   const normalized = normalizeName(payload.patient.fullName);
   if (!normalized) throw new ApiError(400, 'Patient name is required');
@@ -335,7 +338,7 @@ export async function maybeLinkFromRegistration(patient, analysis, payload, acto
   const other = analysis.crossDepartmentCandidate.patient;
   const skin = patient.departmentCode === 'SKIN' ? patient : other;
   const surgery = patient.departmentCode === 'SURGERY' ? patient : other;
-  return writeLink(skin, surgery, actor, session, req, 'CNIC_NAME_MATCH', 'Verified CNIC and name match during registration');
+  return writeLink(skin, surgery, actor, session, req, 'CNIC_NAME_MATCH', 'Verified same name, CNIC, and phone during registration');
 }
 
 export async function linkPatients(input, actor, req) {
@@ -534,8 +537,8 @@ export async function correctPatient(id, input, actor, req) {
   assertDemographics(input);
   const cnicDigits = normalizeCnic(input.cnic);
   const normalizedPhone = normalizePhone(input.contactNumber);
-  if (!cnicDigits) throw new ApiError(400, 'CNIC must contain 13 digits');
-  if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Contact number is invalid');
+  if (!cnicDigits) throw new ApiError(400, 'Enter a CNIC or passport number, 6 to 20 characters');
+  if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Enter a phone number with 7 to 15 digits');
   const nextHash = hashCnic(cnicDigits);
   if (nextHash !== patient.cnicHash) {
     const clash = await Patient.findOne({ department: patient.department, cnicHash: nextHash, isDeleted: false, _id: { $ne: patient._id } });

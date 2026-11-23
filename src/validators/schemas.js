@@ -142,8 +142,8 @@ export const settingsSchema = requestSchema({
 
 const patientBody = z.object({
   fullName: z.string().trim().min(2).max(120),
-  contactNumber: z.string().trim().min(7).max(20),
-  cnic: z.string().trim().min(13).max(20),
+  contactNumber: z.string().trim().min(7).max(24),
+  cnic: z.string().trim().min(6).max(24),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   gender: z.enum(GENDERS),
   nationality: z.string().trim().min(1).max(80),
@@ -167,8 +167,8 @@ export const identifySchema = requestSchema({
   body: z.object({
     departmentCode: z.enum(['SKIN', 'SURGERY']),
     fullName: z.string().trim().min(2).max(120),
-    contactNumber: z.string().trim().min(7).max(20),
-    cnic: z.string().trim().min(13).max(20),
+    contactNumber: z.string().trim().min(7).max(24),
+    cnic: z.string().trim().min(6).max(24),
   }).strict(),
 });
 

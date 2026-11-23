@@ -7,7 +7,7 @@ export function normalizePhone(input) {
 }
 
 export function isValidPhone(normalized) {
-  return /^\d{10,14}$/.test(normalized || '');
+  return /^\d{7,15}$/.test(normalized || '');
 }
 
 export function maskPhone(phone) {
