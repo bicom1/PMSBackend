@@ -86,7 +86,10 @@ export const versionRemark = asyncHandler(async (req, res) => {
 });
 
 export const upload = asyncHandler(async (req, res) => {
-  const data = await documents.uploadDocuments(req.params.id, req.files, req.user, req);
+  const data = await documents.uploadDocuments(req.params.id, req.files, req.user, req, {
+    category: req.body?.category,
+    note: req.body?.note,
+  });
   res.status(201).json({ success: true, data });
 });
 

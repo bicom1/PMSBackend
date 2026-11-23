@@ -8,6 +8,7 @@ import { Submission } from '../models/Submission.js';
 import { SkinSubmissionDetail } from '../models/SkinSubmissionDetail.js';
 import { SurgerySubmissionDetail } from '../models/SurgerySubmissionDetail.js';
 import { Document } from '../models/Document.js';
+import { presentDocument } from './documentService.js';
 import { Patient } from '../models/Patient.js';
 import { PatientIdentity } from '../models/PatientIdentity.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -294,22 +295,6 @@ async function decorateHistory(submissions, actor, anchor) {
   }));
 }
 
-function presentDocument(document) {
-  return {
-    id: document._id,
-    originalFilename: document.originalFilename,
-    mimeType: document.mimeType,
-    size: document.size,
-    uploadedBy: document.uploadedBy,
-    uploadedByName: document.uploadedByName,
-    createdAt: document.createdAt,
-    isDeleted: document.isDeleted,
-    deletedAt: document.deletedAt,
-    deletedByName: document.deletedByName || '',
-    deleteReason: document.deleteReason || '',
-  };
-}
-
 export async function getSubmissionDetail(id, actor) {
   const submission = await getSubmissionForActor(actor, id);
   const patient = await Patient.findById(submission.patient);
@@ -332,7 +317,7 @@ export async function getSubmissionDetail(id, actor) {
     patient: presentPatient(patient, { includeCnic: true }),
     skinDetails,
     surgeryDetails,
-    documents: documents.map(presentDocument),
+    documents: documents.map((document) => presentDocument(document, actor)),
     prescriptions,
     remarks,
     history,

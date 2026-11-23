@@ -16,6 +16,8 @@ const schema = new mongoose.Schema(
     deletedByName: { type: String, default: '' },
     deletedAt: { type: Date, default: null },
     deleteReason: { type: String, default: '' },
+    category: { type: String, enum: ['LAB', 'SCAN', 'CONSENT', 'IDENTITY', 'OTHER'], default: 'OTHER' },
+    note: { type: String, default: '' },
   },
   { timestamps: true, collection: 'documents' },
 );

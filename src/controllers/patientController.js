@@ -1,6 +1,7 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import * as patients from '../services/patientService.js';
 import * as submissions from '../services/submissionService.js';
+import * as documents from '../services/documentService.js';
 
 export const identify = asyncHandler(async (req, res) => {
   res.json({ success: true, data: await patients.identifyPatient(req.body, req.user) });
@@ -9,6 +10,10 @@ export const identify = asyncHandler(async (req, res) => {
 export const list = asyncHandler(async (req, res) => {
   const data = await patients.listPatients(req.query, req.user);
   res.json({ success: true, ...data });
+});
+
+export const documentsForPatient = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await documents.listPatientDocuments(req.params.id, req.user) });
 });
 
 export const getOne = asyncHandler(async (req, res) => {

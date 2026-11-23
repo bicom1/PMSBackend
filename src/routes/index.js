@@ -74,6 +74,7 @@ export function registerRoutes(app) {
   patientRouter.post('/link', authorize(...staff), validate(schemas.linkSchema), patients.link);
   patientRouter.post('/merge', authorize(ROLES.ADMIN), validate(schemas.mergeSchema), patients.merge);
   patientRouter.get('/:id/history.pdf', authorize(...staff), validate(schemas.idSchema), patients.historyPdf);
+  patientRouter.get('/:id/documents', validate(schemas.idSchema), patients.documentsForPatient);
   patientRouter.get('/:id', validate(schemas.idSchema), patients.getOne);
   patientRouter.patch('/:id', authorize(ROLES.ADMIN), validate(schemas.correctPatientSchema), patients.correct);
   app.use('/api/patients', patientRouter);
