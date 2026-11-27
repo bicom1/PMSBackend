@@ -1,7 +1,12 @@
 export function normalizeCnic(input) {
   const compact = String(input || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!compact) return null;
+  if (/^\d+$/.test(compact)) {
+    if (compact.length !== 13) return null;
+    if (/^(\d)\1{12}$/.test(compact)) return null;
+    return compact;
+  }
   if (!/^[A-Z0-9]{6,20}$/.test(compact)) return null;
-  if (/^(\d)\1{12}$/.test(compact)) return null;
   return compact;
 }
 

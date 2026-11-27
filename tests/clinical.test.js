@@ -36,29 +36,33 @@ async function bookedSkin() {
 }
 
 describe('booking, doctor access, clinical records, and documents', () => {
-  it('adds and removes a patient from the assigned doctor list', async () => {
+  it('shows assigned patients to the doctor as soon as the form is submitted', async () => {
     const created = await helpers.postIntake(app, manager, helpers.intakePayload(fx));
     const id = created.body.data.submission.id;
-    const before = await request(app).get('/api/doctor/patients').set('Authorization', `Bearer ${skinDoctor}`);
-    expect(before.body.meta.total).toBe(0);
-    const hidden = await request(app).get(`/api/submissions/${id}`).set('Authorization', `Bearer ${skinDoctor}`);
-    expect(hidden.status).toBe(403);
+    const notices = await request(app).get('/api/doctor/notifications').set('Authorization', `Bearer ${skinDoctor}`);
+    expect(notices.body.data.unread).toBeGreaterThan(0);
+    expect(notices.body.data.items[0].patientCode).toBe('SKN-000001');
+    const mine = await request(app).get('/api/doctor/patients').set('Authorization', `Bearer ${skinDoctor}`);
+    expect(mine.body.meta.total).toBe(1);
+    expect(mine.body.items[0].patientCode).toBe('SKN-000001');
+    const visible = await request(app).get(`/api/submissions/${id}`).set('Authorization', `Bearer ${skinDoctor}`);
+    expect(visible.status).toBe(200);
+    const completedWhileUnbooked = await request(app).patch(`/api/doctor/patients/${id}/consultation`).set('Authorization', `Bearer ${skinDoctor}`).send({ status: 'COMPLETED' });
+    expect(completedWhileUnbooked.status).toBe(200);
+    expect(completedWhileUnbooked.body.data.consultationStatus).toBe('COMPLETED');
+    const afterOpen = await request(app).get('/api/doctor/notifications').set('Authorization', `Bearer ${skinDoctor}`);
+    expect(afterOpen.body.data.unread).toBe(0);
     const booked = await request(app).patch(`/api/submissions/${id}/booking`).set('Authorization', `Bearer ${manager}`).send({ status: 'BOOKED' });
     expect(booked.body.data.bookingStatus).toBe('BOOKED');
     expect(booked.body.data.bookedAt).toBeTruthy();
-    const notices = await request(app).get('/api/doctor/notifications').set('Authorization', `Bearer ${skinDoctor}`);
-    expect(notices.body.data.unread).toBeGreaterThan(0);
-    const mine = await request(app).get('/api/doctor/patients?doctorId=507f1f77bcf86cd799439011').set('Authorization', `Bearer ${skinDoctor}`);
-    expect(mine.body.meta.total).toBe(1);
-    expect(mine.body.items[0].patientCode).toBe('SKN-000001');
     const other = await request(app).get('/api/doctor/patients').set('Authorization', `Bearer ${surgeryDoctor}`);
     expect(other.body.meta.total).toBe(0);
     const reversed = await request(app).patch(`/api/submissions/${id}/booking`).set('Authorization', `Bearer ${manager}`).send({ status: 'NOT_BOOKED' });
     expect(reversed.body.data.bookingHistory).toHaveLength(2);
     const after = await request(app).get('/api/doctor/patients').set('Authorization', `Bearer ${skinDoctor}`);
-    expect(after.body.meta.total).toBe(0);
-    const closed = await request(app).get(`/api/submissions/${id}`).set('Authorization', `Bearer ${skinDoctor}`);
-    expect(closed.status).toBe(403);
+    expect(after.body.meta.total).toBe(1);
+    const stillVisible = await request(app).get(`/api/submissions/${id}`).set('Authorization', `Bearer ${skinDoctor}`);
+    expect(stillVisible.status).toBe(200);
   });
 
   it('logs doctor reassignment and blocks it after booking for a manager', async () => {

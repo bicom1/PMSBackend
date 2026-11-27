@@ -13,11 +13,26 @@ import { connectDb } from '../src/config/db.js';
 
 export const PASSWORD = 'Test@12345';
 
+function assertTestDatabase() {
+  const uri = String(mongoose.connection.client?.s?.url || process.env.MONGODB_URI || '');
+  const isMemory = /127\.0\.0\.1|localhost|mongodb-memory-server/i.test(uri)
+    || process.env.NODE_ENV === 'test';
+  const isAtlasOrShared = /mongodb\.net|mongodb\+srv/i.test(uri);
+  if (!isMemory || isAtlasOrShared) {
+    throw new Error('Refusing to use the shared/production MongoDB for tests. Run via `npm test` (memory server) only.');
+  }
+}
+
 export async function connectTestDb() {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('connectTestDb is only allowed when NODE_ENV=test');
+  }
   await connectDb();
+  assertTestDatabase();
 }
 
 export async function resetDatabase() {
+  assertTestDatabase();
   for (const collection of Object.values(mongoose.connection.collections)) {
     await collection.deleteMany({});
   }
@@ -54,15 +69,20 @@ export async function createFixture() {
     { type: 'SURGERY_LOCATION', label: 'OT-1', value: 'ot_1', isActive: true },
     { type: 'MRI_STATUS', label: 'Not Required', value: 'not_required', isActive: true },
   ]);
-  const policy = await PolicyNote.create({ key: 'PATIENT_ACK', title: 'Patient acknowledgement', isActive: true });
-  const policyVersion = await PolicyVersion.create({ policy: policy._id, version: 1, items: POLICY_ITEMS, createdBy: admin._id });
-  policy.currentVersion = policyVersion._id;
-  await policy.save();
+  const skinPolicy = await PolicyNote.create({ key: 'PATIENT_ACK_SKIN', title: 'Skin policy acknowledgement', isActive: true });
+  const surgeryPolicy = await PolicyNote.create({ key: 'PATIENT_ACK_SURGERY', title: 'Surgery policy acknowledgement', isActive: true });
+  const skinPolicyVersion = await PolicyVersion.create({ policy: skinPolicy._id, version: 1, items: POLICY_ITEMS, createdBy: admin._id });
+  const surgeryPolicyVersion = await PolicyVersion.create({ policy: surgeryPolicy._id, version: 1, items: POLICY_ITEMS, createdBy: admin._id });
+  skinPolicy.currentVersion = skinPolicyVersion._id;
+  surgeryPolicy.currentVersion = surgeryPolicyVersion._id;
+  await skinPolicy.save();
+  await surgeryPolicy.save();
   return {
     departments: { skin, surgery },
     users: { admin, manager, managerTwo, skinDoctor, surgeryDoctor, bothDoctor },
     procedures,
-    policyVersion,
+    policyVersion: skinPolicyVersion,
+    policyVersions: { skin: skinPolicyVersion, surgery: surgeryPolicyVersion },
   };
 }
 
@@ -90,6 +110,9 @@ export function intakePayload(fx, overrides = {}) {
   const departmentCode = overrides.departmentCode || 'SKIN';
   const doctor = departmentCode === 'SURGERY' ? fx.users.surgeryDoctor : fx.users.skinDoctor;
   const procedure = departmentCode === 'SURGERY' ? fx.procedures.surgery : fx.procedures.skin;
+  const policyVersion = departmentCode === 'SURGERY'
+    ? (fx.policyVersions?.surgery || fx.policyVersion)
+    : (fx.policyVersions?.skin || fx.policyVersion);
   return {
     departmentCode,
     mode: 'new',
@@ -97,7 +120,7 @@ export function intakePayload(fx, overrides = {}) {
     confirmIdentityLink: false,
     acceptPhoneUpdate: false,
     policyAcknowledged: true,
-    policyVersionId: String(fx.policyVersion._id),
+    policyVersionId: String(policyVersion._id),
     patient: {
       fullName: 'Ayesha Khan',
       contactNumber: '03001234567',
@@ -112,7 +135,7 @@ export function intakePayload(fx, overrides = {}) {
     },
     visit: {
       weightKg: 62,
-      heightCm: 165,
+      heightCm: 65,
       referredBy: 'walk_in',
       doctorId: String(doctor._id),
       procedureId: String(procedure._id),

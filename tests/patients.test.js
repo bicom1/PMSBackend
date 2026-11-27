@@ -104,7 +104,7 @@ describe('patient registration and identification', () => {
     const created = await helpers.postIntake(app, manager, helpers.intakePayload(fx, {
       departmentCode: 'SURGERY',
       patient: { nationality: 'Afghanistan', occupation: 'Pilot', city: 'Gilgit' },
-      visit: { weightKg: 22.5, heightCm: 215, referredBy: 'Instagram' },
+      visit: { weightKg: 22.5, heightCm: 67, referredBy: 'Instagram' },
       surgeryDetails: {
         anesthesiaType: 'Local with sedation',
         diet: 'Clear liquids',
@@ -118,7 +118,7 @@ describe('patient registration and identification', () => {
     expect(created.body.data.patient.nationality).toBe('Afghanistan');
     expect(created.body.data.patient.city).toBe('Gilgit');
     expect(created.body.data.patient.occupation).toBe('Pilot');
-    expect(created.body.data.submission.heightCm).toBe(215);
+    expect(created.body.data.submission.heightCm).toBe(67);
     expect(created.body.data.submission.referredByLabel).toBe('Instagram');
     const detail = await request(app).get(`/api/submissions/${created.body.data.submission.id}`).set('Authorization', `Bearer ${manager}`);
     expect(detail.body.data.surgeryDetails.locationOfSurgeryLabel).toBe('Ward 3');

@@ -37,12 +37,16 @@ export const updateMaster = asyncHandler(async (req, res) => {
   res.json({ success: true, data: await catalog.updateMasterData(req.params.id, req.body, req.user, req) });
 });
 
-export const currentPolicy = asyncHandler(async (_req, res) => {
-  res.json({ success: true, data: await catalog.getCurrentPolicy() });
+export const deleteMaster = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await catalog.deleteMasterData(req.params.id, req.user, req) });
 });
 
-export const policyVersions = asyncHandler(async (_req, res) => {
-  res.json({ success: true, data: await catalog.listPolicyVersions() });
+export const currentPolicy = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await catalog.getCurrentPolicy(req.query.departmentCode || 'SKIN') });
+});
+
+export const policyVersions = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await catalog.listPolicyVersions(req.query.departmentCode || 'SKIN') });
 });
 
 export const publishPolicy = asyncHandler(async (req, res) => {

@@ -3,10 +3,12 @@ import { MasterData } from '../models/MasterData.js';
 import { Procedure } from '../models/Procedure.js';
 import { PolicyNote } from '../models/PolicyNote.js';
 import { PolicyVersion } from '../models/PolicyVersion.js';
-import { POLICY_ITEMS } from '../constants/index.js';
+import { POLICY_DEPARTMENTS, POLICY_ITEMS } from '../constants/index.js';
 import { INTAKE_OPTIONS, SKIN_PROCEDURES, SURGERY_PROCEDURES } from '../constants/intakeOptions.js';
+import { ensureFormFields } from './formFieldService.js';
 
 export async function ensureClinicFoundation() {
+  await ensureFormFields();
   const departments = [
     { code: 'SKIN', name: 'Skin Department', patientIdPrefix: 'SKN', description: 'Skin department intake.' },
     { code: 'SURGERY', name: 'Surgery Department', patientIdPrefix: 'SRG', description: 'Surgery department intake.' },
@@ -40,13 +42,39 @@ export async function ensureClinicFoundation() {
     }
   }
 
-  let policy = await PolicyNote.findOne({ key: 'PATIENT_ACK' });
-  if (!policy) {
-    policy = await PolicyNote.create({ key: 'PATIENT_ACK', title: 'Patient acknowledgement', isActive: true });
+  const legacy = await PolicyNote.findOne({ key: 'PATIENT_ACK' });
+  let legacyItems = POLICY_ITEMS;
+  if (legacy?.currentVersion) {
+    const legacyVersion = await PolicyVersion.findById(legacy.currentVersion);
+    if (legacyVersion?.items?.length) legacyItems = legacyVersion.items;
   }
-  if (!policy.currentVersion) {
-    const version = await PolicyVersion.create({ policy: policy._id, version: 1, items: POLICY_ITEMS });
-    policy.currentVersion = version._id;
-    await policy.save();
+
+  for (const dept of POLICY_DEPARTMENTS) {
+    let policy = await PolicyNote.findOne({ key: dept.key });
+    if (!policy) {
+      policy = await PolicyNote.create({ key: dept.key, title: dept.title, isActive: true });
+    }
+    let currentVersion = policy.currentVersion
+      ? await PolicyVersion.findById(policy.currentVersion)
+      : null;
+    if (!currentVersion) {
+      currentVersion = await PolicyVersion.findOne({ policy: policy._id }).sort({ version: -1 });
+    }
+    if (!currentVersion) {
+      currentVersion = await PolicyVersion.create({
+        policy: policy._id,
+        version: 1,
+        items: legacyItems,
+      });
+    } else if (!currentVersion.items?.length) {
+      currentVersion.items = legacyItems;
+      await currentVersion.save();
+    }
+    if (String(policy.currentVersion || '') !== String(currentVersion._id) || !policy.isActive || policy.title !== dept.title) {
+      policy.currentVersion = currentVersion._id;
+      policy.isActive = true;
+      policy.title = dept.title;
+      await policy.save();
+    }
   }
 }

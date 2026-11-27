@@ -1,12 +1,10 @@
 import { Submission } from '../models/Submission.js';
 import { ApiError } from '../utils/ApiError.js';
-import { BOOKING_STATUS, ROLES } from '../constants/index.js';
+import { ROLES } from '../constants/index.js';
 
 export function doctorOwnsSubmission(actor, submission) {
   const inDepartment = (actor.departments || []).some((id) => String(id) === String(submission.department));
-  return String(submission.doctor) === String(actor._id)
-    && inDepartment
-    && submission.bookingStatus === BOOKING_STATUS.BOOKED;
+  return String(submission.doctor) === String(actor._id) && inDepartment;
 }
 
 export async function doctorCanAccessSubmission(actor, submission) {
@@ -25,8 +23,8 @@ export function assertAssignedDoctor(actor, submission) {
   if (actor.role !== ROLES.DOCTOR) {
     throw new ApiError(403, 'Only the assigned doctor can update clinical records');
   }
-  if (submission.bookingStatus !== BOOKING_STATUS.BOOKED || String(submission.doctor) !== String(actor._id)) {
-    throw new ApiError(403, 'Only the assigned doctor of a booked patient can update clinical records');
+  if (!submission.doctor || String(submission.doctor) !== String(actor._id)) {
+    throw new ApiError(403, 'Only the assigned doctor can update clinical records');
   }
 }
 
@@ -38,7 +36,6 @@ export async function assertCanAccessPatient(actor, patient) {
       patient: patient._id,
       doctor: actor._id,
       department: { $in: actor.departments || [] },
-      bookingStatus: BOOKING_STATUS.BOOKED,
       isDeleted: false,
     });
     if (own) return patient;

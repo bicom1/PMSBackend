@@ -12,6 +12,7 @@ export { Prescription } from './Prescription.js';
 export { PrescriptionVersion } from './PrescriptionVersion.js';
 export { DoctorRemark } from './DoctorRemark.js';
 export { RemarkVersion } from './RemarkVersion.js';
+export { VoiceRecording } from './VoiceRecording.js';
 export { Procedure } from './Procedure.js';
 export { MasterData } from './MasterData.js';
 export { PolicyNote } from './PolicyNote.js';

@@ -2,13 +2,15 @@ import { Router } from 'express';
 import mongoose from 'mongoose';
 import { requireAuth, authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { uploadPdfs } from '../middleware/upload.js';
+import { uploadPdfs, uploadVoiceAudio } from '../middleware/upload.js';
 import { ROLES } from '../constants/index.js';
 import * as auth from '../controllers/authController.js';
 import * as users from '../controllers/userController.js';
 import * as catalog from '../controllers/catalogController.js';
+import * as formFields from '../controllers/formFieldController.js';
 import * as patients from '../controllers/patientController.js';
 import * as submissions from '../controllers/submissionController.js';
+import * as voice from '../controllers/voiceController.js';
 import * as reports from '../controllers/reportController.js';
 import * as schemas from '../validators/schemas.js';
 
@@ -54,15 +56,20 @@ export function registerRoutes(app) {
   catalogRouter.get('/departments', requireAuth, validate(schemas.catalogListSchema), catalog.departments);
   catalogRouter.patch('/departments/:id', requireAuth, authorize(ROLES.ADMIN), validate(schemas.departmentUpdateSchema), catalog.updateDepartment);
   catalogRouter.get('/procedures', requireAuth, validate(schemas.catalogListSchema), catalog.procedures);
-  catalogRouter.post('/procedures', requireAuth, authorize(ROLES.ADMIN), validate(schemas.procedureCreateSchema), catalog.createProcedure);
-  catalogRouter.patch('/procedures/:id', requireAuth, authorize(ROLES.ADMIN), validate(schemas.procedureUpdateSchema), catalog.updateProcedure);
-  catalogRouter.get('/master-data/types', requireAuth, authorize(ROLES.ADMIN), catalog.masterTypes);
+  catalogRouter.post('/procedures', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.procedureCreateSchema), catalog.createProcedure);
+  catalogRouter.patch('/procedures/:id', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.procedureUpdateSchema), catalog.updateProcedure);
+  catalogRouter.get('/master-data/types', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), catalog.masterTypes);
   catalogRouter.get('/master-data', requireAuth, validate(schemas.catalogListSchema), catalog.masterData);
-  catalogRouter.post('/master-data', requireAuth, authorize(ROLES.ADMIN), validate(schemas.masterCreateSchema), catalog.createMaster);
-  catalogRouter.patch('/master-data/:id', requireAuth, authorize(ROLES.ADMIN), validate(schemas.masterUpdateSchema), catalog.updateMaster);
+  catalogRouter.post('/master-data', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.masterCreateSchema), catalog.createMaster);
+  catalogRouter.patch('/master-data/:id', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.masterUpdateSchema), catalog.updateMaster);
+  catalogRouter.delete('/master-data/:id', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.masterDeleteSchema), catalog.deleteMaster);
+  catalogRouter.get('/form-fields', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER, ROLES.DOCTOR), validate(schemas.formFieldListSchema), formFields.list);
+  catalogRouter.post('/form-fields', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.formFieldCreateSchema), formFields.create);
+  catalogRouter.patch('/form-fields/:id', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.formFieldUpdateSchema), formFields.update);
+  catalogRouter.delete('/form-fields/:id', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.formFieldDeleteSchema), formFields.remove);
   catalogRouter.get('/policy/current', requireAuth, catalog.currentPolicy);
-  catalogRouter.get('/policy/versions', requireAuth, authorize(ROLES.ADMIN), catalog.policyVersions);
-  catalogRouter.post('/policy/versions', requireAuth, authorize(ROLES.ADMIN), validate(schemas.policySchema), catalog.publishPolicy);
+  catalogRouter.get('/policy/versions', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), catalog.policyVersions);
+  catalogRouter.post('/policy/versions', requireAuth, authorize(ROLES.ADMIN, ROLES.CLINIC_MANAGER), validate(schemas.policySchema), catalog.publishPolicy);
   catalogRouter.get('/settings', requireAuth, authorize(ROLES.ADMIN), catalog.settings);
   catalogRouter.patch('/settings', requireAuth, authorize(ROLES.ADMIN), validate(schemas.settingsSchema), catalog.updateSettings);
   app.use('/api', catalogRouter);
@@ -91,6 +98,8 @@ export function registerRoutes(app) {
   submissionRouter.post('/:id/documents', authorize(...staff), validate(schemas.idSchema), uploadPdfs, submissions.upload);
   submissionRouter.post('/:id/prescriptions', authorize(ROLES.DOCTOR), validate(schemas.prescriptionSchema), submissions.createPrescription);
   submissionRouter.post('/:id/remarks', authorize(ROLES.DOCTOR), validate(schemas.clinicalRemarkSchema), submissions.createRemark);
+  submissionRouter.get('/:id/voice-recordings', authorize(...clinicalReaders), validate(schemas.idSchema), voice.listForSubmission);
+  submissionRouter.post('/:id/voice-recordings', authorize(ROLES.DOCTOR), validate(schemas.voiceCreateSchema), voice.create);
   app.use('/api/submissions', submissionRouter);
 
   const doctorRouter = Router();
@@ -101,6 +110,7 @@ export function registerRoutes(app) {
   doctorRouter.get('/patients', validate(schemas.submissionListSchema), submissions.myPatients);
   doctorRouter.get('/patients/:id', validate(schemas.idSchema), submissions.detail);
   doctorRouter.patch('/patients/:id/consultation', validate(schemas.consultationSchema), submissions.consultation);
+  doctorRouter.post('/voice/realtime-session', voice.realtimeSession);
   app.use('/api/doctor', doctorRouter);
 
   app.get('/api/inbox', requireAuth, authorize(...staff), submissions.inbox);
@@ -110,6 +120,10 @@ export function registerRoutes(app) {
   app.post('/api/prescriptions/:id/versions', requireAuth, authorize(ROLES.DOCTOR), validate(schemas.prescriptionSchema), submissions.versionPrescription);
   app.get('/api/prescriptions/:id/pdf', requireAuth, authorize(...clinicalReaders), validate(schemas.idSchema), submissions.prescriptionPdf);
   app.post('/api/remarks/:id/versions', requireAuth, authorize(ROLES.DOCTOR), validate(schemas.clinicalRemarkSchema), submissions.versionRemark);
+
+  app.patch('/api/voice-recordings/:id', requireAuth, authorize(ROLES.DOCTOR), validate(schemas.voiceUpdateSchema), voice.update);
+  app.post('/api/voice-recordings/:id/audio', requireAuth, authorize(ROLES.DOCTOR), validate(schemas.idSchema), uploadVoiceAudio, voice.uploadAudio);
+  app.get('/api/voice-recordings/:id/audio', requireAuth, authorize(...clinicalReaders), validate(schemas.idSchema), voice.playAudio);
 
   app.get('/api/documents/:id/view', requireAuth, validate(schemas.idSchema), submissions.viewDocument);
   app.get('/api/documents/:id/download', requireAuth, validate(schemas.idSchema), submissions.downloadDocument);

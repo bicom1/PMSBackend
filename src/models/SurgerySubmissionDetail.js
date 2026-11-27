@@ -1,5 +1,14 @@
 import mongoose from 'mongoose';
 
+const fieldSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true },
+    label: { type: String, required: true },
+    value: { type: String, default: '' },
+  },
+  { _id: false },
+);
+
 const schema = new mongoose.Schema(
   {
     submission: { type: mongoose.Schema.Types.ObjectId, ref: 'Submission', required: true, unique: true },
@@ -16,6 +25,7 @@ const schema = new mongoose.Schema(
     mri: { type: String, default: '' },
     mriLabel: { type: String, default: '' },
     anyOther: { type: String, default: '' },
+    fields: { type: [fieldSchema], default: [] },
     pendingClinicConfirmation: { type: Boolean, default: true },
   },
   { timestamps: true, collection: 'surgerySubmissionDetails' },

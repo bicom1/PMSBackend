@@ -60,11 +60,12 @@ describe('administration, audit, and reports', () => {
 
   it('versions policy text and keeps the previous version', async () => {
     const published = await request(app).post('/api/policy/versions').set('Authorization', `Bearer ${admin}`).send({
+      departmentCode: 'SKIN',
       items: ['Updated acknowledgement line for the clinic.'],
     });
     expect(published.status).toBe(201);
     expect(published.body.data.version).toBe(2);
-    const versions = await request(app).get('/api/policy/versions').set('Authorization', `Bearer ${admin}`);
+    const versions = await request(app).get('/api/policy/versions').query({ departmentCode: 'SKIN' }).set('Authorization', `Bearer ${admin}`);
     expect(versions.body.data).toHaveLength(2);
     const stale = await helpers.postIntake(app, manager, helpers.intakePayload(fx));
     expect(stale.status).toBe(409);

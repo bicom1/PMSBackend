@@ -4,6 +4,7 @@ import * as clinical from '../services/clinicalService.js';
 import * as documents from '../services/documentService.js';
 import * as dashboard from '../services/dashboardService.js';
 import * as notifications from '../services/notificationService.js';
+import * as voice from '../services/voiceService.js';
 import { listUnreadSubmissions } from '../services/recordViewService.js';
 
 export const create = asyncHandler(async (req, res) => {

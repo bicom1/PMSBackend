@@ -65,6 +65,7 @@ export const userListSchema = requestSchema({
     role: z.enum(['ADMIN', 'CLINIC_MANAGER', 'DOCTOR']).optional(),
     active: z.enum(['true', 'false']).optional(),
     departmentId: objectId.optional(),
+    departmentCode: z.enum(['SKIN', 'SURGERY']).optional(),
   }).strip(),
 });
 
@@ -99,6 +100,7 @@ export const masterCreateSchema = requestSchema({
     type: z.enum(MASTER_TYPE_KEYS),
     label: z.string().trim().min(1).max(120),
     value: z.string().trim().max(80).optional(),
+    departmentCode: z.enum(['SKIN', 'SURGERY']).optional(),
     isActive: z.boolean().optional(),
     sortOrder: z.number().int().min(0).max(9999).optional(),
     allowOther: z.boolean().optional(),
@@ -116,6 +118,7 @@ export const masterUpdateSchema = requestSchema({
   params: z.object({ id: objectId }),
   body: z.object({
     label: z.string().trim().min(1).max(120).optional(),
+    value: z.string().trim().min(1).max(80).optional(),
     isActive: z.boolean().optional(),
     sortOrder: z.number().int().optional(),
     allowOther: z.boolean().optional(),
@@ -123,8 +126,13 @@ export const masterUpdateSchema = requestSchema({
   }).strict(),
 });
 
+export const masterDeleteSchema = requestSchema({
+  params: z.object({ id: objectId }),
+});
+
 export const policySchema = requestSchema({
   body: z.object({
+    departmentCode: z.enum(['SKIN', 'SURGERY']),
     title: z.string().trim().min(2).max(120).optional(),
     items: z.array(z.string().trim().min(3).max(400)).min(1).max(20),
   }).strict(),
@@ -144,23 +152,69 @@ const patientBody = z.object({
   fullName: z.string().trim().min(2).max(120),
   contactNumber: z.string().trim().min(7).max(24),
   cnic: z.string().trim().min(6).max(24),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  gender: z.enum(GENDERS),
-  nationality: z.string().trim().min(1).max(80),
-  occupation: z.string().trim().min(1).max(80),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+  gender: z.enum(GENDERS).optional().or(z.literal('')),
+  nationality: z.string().trim().max(80).optional().or(z.literal('')),
+  occupation: z.string().trim().max(80).optional().or(z.literal('')),
   occupationOther: z.string().max(80).optional(),
-  city: z.string().trim().min(1).max(80),
-  address: z.string().trim().min(3).max(240),
+  city: z.string().trim().max(80).optional().or(z.literal('')),
+  address: z.string().trim().max(240).optional().or(z.literal('')),
 });
 
 const visitBody = z.object({
-  weightKg: z.number().gt(0).max(400),
-  heightCm: z.number().gt(30).max(250),
-  referredBy: z.string().trim().min(1).max(80),
+  weightKg: z.number().gt(0).max(400).nullable().optional(),
+  heightCm: z.number().gt(36).max(96).nullable().optional(),
+  referredBy: z.string().trim().max(80).optional().or(z.literal('')),
   referredByOther: z.string().max(120).optional(),
-  doctorId: objectId,
-  procedureId: objectId,
-  formDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  doctorId: objectId.optional().or(z.literal('')).or(z.null()),
+  procedureId: objectId.optional().or(z.literal('')).or(z.null()),
+  formDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
+});
+
+export const formFieldListSchema = requestSchema({
+  query: z.object({
+    departmentCode: z.enum(['SKIN', 'SURGERY']).optional(),
+    active: z.enum(['true', 'false']).optional(),
+  }).strip(),
+});
+
+export const formFieldCreateSchema = requestSchema({
+  body: z.object({
+    departmentCode: z.enum(['SKIN', 'SURGERY']),
+    label: z.string().trim().min(1).max(120),
+    key: z.string().trim().max(80).optional(),
+    section: z.enum(['identification', 'personal', 'visit', 'details']).optional(),
+    fieldType: z.enum(['text', 'tel', 'date', 'number', 'textarea', 'select', 'doctor', 'procedure', 'age']).optional(),
+    optionsSource: z.string().max(40).optional(),
+    required: z.boolean().optional(),
+    allowCustom: z.boolean().optional(),
+    unit: z.string().max(20).optional(),
+    placeholder: z.string().max(120).optional(),
+    sortOrder: z.number().int().min(0).max(9999).optional(),
+    isActive: z.boolean().optional(),
+    metadata: z.record(z.any()).optional(),
+  }).strict(),
+});
+
+export const formFieldUpdateSchema = requestSchema({
+  params: z.object({ id: objectId }),
+  body: z.object({
+    label: z.string().trim().min(1).max(120).optional(),
+    section: z.enum(['identification', 'personal', 'visit', 'details']).optional(),
+    fieldType: z.enum(['text', 'tel', 'date', 'number', 'textarea', 'select', 'doctor', 'procedure', 'age']).optional(),
+    optionsSource: z.string().max(40).optional(),
+    required: z.boolean().optional(),
+    allowCustom: z.boolean().optional(),
+    unit: z.string().max(20).optional(),
+    placeholder: z.string().max(120).optional(),
+    sortOrder: z.number().int().min(0).max(9999).optional(),
+    isActive: z.boolean().optional(),
+    metadata: z.record(z.any()).optional(),
+  }).strict(),
+});
+
+export const formFieldDeleteSchema = requestSchema({
+  params: z.object({ id: objectId }),
 });
 
 export const identifySchema = requestSchema({
@@ -195,6 +249,7 @@ export const submissionSchema = requestSchema({
       locationOfSurgery: z.string().max(80).optional(),
       mri: z.string().max(80).optional(),
       anyOther: z.string().max(2000).optional(),
+      fields: z.array(z.object({ key: z.string().min(1).max(80), value: z.string().max(2000) }).strict()).max(50).optional(),
     }).strict().optional(),
     policyVersionId: objectId,
     policyAcknowledged: z.literal(true),
@@ -276,6 +331,31 @@ export const prescriptionSchema = requestSchema({
     prescriptionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     medicines: z.array(medicine).min(1).max(30),
     note: z.string().max(400).optional(),
+  }).strict(),
+});
+
+export const voiceCreateSchema = requestSchema({
+  params: z.object({ id: objectId }),
+  body: z.object({
+    clientSessionId: z.string().trim().max(120).optional(),
+    mimeType: z.string().trim().max(80).optional(),
+    status: z.enum(['recording', 'paused', 'uploading', 'ready', 'failed']).optional(),
+    transcriptDraft: z.string().max(100000).optional(),
+    transcriptionProvider: z.string().trim().max(80).optional(),
+    durationMs: z.number().int().min(0).max(24 * 60 * 60 * 1000).optional(),
+  }).strict(),
+});
+
+export const voiceUpdateSchema = requestSchema({
+  params: z.object({ id: objectId }),
+  body: z.object({
+    status: z.enum(['recording', 'paused', 'uploading', 'ready', 'failed']).optional(),
+    durationMs: z.number().int().min(0).max(24 * 60 * 60 * 1000).optional(),
+    transcriptDraft: z.string().max(100000).optional(),
+    transcript: z.string().max(100000).optional(),
+    transcriptionProvider: z.string().trim().max(80).optional(),
+    finalizeTranscript: z.boolean().optional(),
+    error: z.string().max(500).optional(),
   }).strict(),
 });
 

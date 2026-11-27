@@ -24,6 +24,7 @@ import { loadPrescriptions, loadRemarks } from './clinicalService.js';
 import { writeAudit } from './auditService.js';
 import { markSubmissionNotificationsRead, notifyDoctorOfPatient } from './notificationService.js';
 import { applyUnread, markRecordOpened, openedIdSet } from './recordViewService.js';
+import { listVoiceRecordings } from './voiceService.js';
 import PDFDocument from 'pdfkit';
 import { AUDIT, BOOKING_STATUS, CONSULTATION_STATUS, ROLES, SURGERY_SELECTS } from '../constants/index.js';
 
@@ -55,32 +56,45 @@ export async function createSubmission(payload, actor, req) {
   if (![ROLES.ADMIN, ROLES.CLINIC_MANAGER].includes(actor.role)) {
     throw new ApiError(403, 'You do not have permission to register patients');
   }
-  return withTransaction(async (session) => {
+  const result = await withTransaction(async (session) => {
     const department = await withSession(Department.findOne({ code: payload.departmentCode, isActive: true }), session);
     if (!department) throw new ApiError(400, 'Department not found');
-    const procedure = await withSession(Procedure.findOne({ _id: payload.visit.procedureId, department: department._id, isActive: true }), session);
-    if (!procedure) throw new ApiError(400, 'Procedure is not valid for this department');
-    const doctor = await withSession(User.findOne({
-      _id: payload.visit.doctorId,
-      role: ROLES.DOCTOR,
-      isActive: true,
-      departments: department._id,
-    }), session);
-    if (!doctor) throw new ApiError(400, 'Doctor is not assigned to this department');
-    if (!isIsoDate(payload.visit.formDate) || payload.visit.formDate > clinicToday()) {
+    const procedureId = payload.visit.procedureId || null;
+    const doctorId = payload.visit.doctorId || null;
+    let procedure = null;
+    if (procedureId) {
+      procedure = await withSession(Procedure.findOne({ _id: procedureId, department: department._id, isActive: true }), session);
+      if (!procedure) throw new ApiError(400, 'Procedure is not valid for this department');
+    }
+    let doctor = null;
+    if (doctorId) {
+      doctor = await withSession(User.findOne({
+        _id: doctorId,
+        role: ROLES.DOCTOR,
+        isActive: true,
+        departments: department._id,
+      }), session);
+      if (!doctor) throw new ApiError(400, 'Doctor is not assigned to this department');
+    }
+    const formDate = payload.visit.formDate || clinicToday();
+    if (!isIsoDate(formDate) || formDate > clinicToday()) {
       throw new ApiError(400, 'Form date cannot be in the future');
     }
-    const referral = await assertChoice('REFERRAL_SOURCE', payload.visit.referredBy, 'Referral source');
+    const referral = payload.visit.referredBy
+      ? await assertChoice('REFERRAL_SOURCE', payload.visit.referredBy, 'Referral source')
+      : { value: '', label: '', allowOther: false };
     if (referral.allowOther && !payload.visit.referredByOther?.trim()) {
       throw new ApiError(400, 'Specify the other referral source');
     }
-    const occupation = await assertChoice('OCCUPATION', payload.patient.occupation, 'Occupation');
+    const occupation = payload.patient.occupation
+      ? await assertChoice('OCCUPATION', payload.patient.occupation, 'Occupation')
+      : { value: '', label: '', allowOther: false };
     if (occupation.allowOther && !payload.patient.occupationOther?.trim()) {
       throw new ApiError(400, 'Specify the other occupation');
     }
-    await assertChoice('NATIONALITY', payload.patient.nationality, 'Nationality');
-    await assertChoice('CITY', payload.patient.city, 'City');
-    const policy = await getCurrentPolicy();
+    if (payload.patient.nationality) await assertChoice('NATIONALITY', payload.patient.nationality, 'Nationality');
+    if (payload.patient.city) await assertChoice('CITY', payload.patient.city, 'City');
+    const policy = await getCurrentPolicy(department.code);
     if (String(policy.versionId) !== String(payload.policyVersionId)) {
       throw new ApiError(409, 'The clinic policy has changed. Review and acknowledge the latest version.', {
         code: 'POLICY_CHANGED',
@@ -98,27 +112,27 @@ export async function createSubmission(payload, actor, req) {
       normalizedPhone: prepared.patient.normalizedPhone,
       department: department._id,
       departmentCode: department.code,
-      procedure: procedure._id,
-      procedureName: procedure.name,
-      doctor: doctor._id,
-      doctorName: doctor.fullName,
-      formDate: payload.visit.formDate,
-      weightKg: payload.visit.weightKg,
-      heightCm: payload.visit.heightCm,
-      ageAtSubmission: age,
-      referredBy: referral.value,
-      referredByLabel: referral.label,
+      procedure: procedure?._id || null,
+      procedureName: procedure?.name || '',
+      doctor: doctor?._id || null,
+      doctorName: doctor?.fullName || '',
+      formDate,
+      weightKg: payload.visit.weightKg ?? null,
+      heightCm: payload.visit.heightCm ?? null,
+      ageAtSubmission: age ?? null,
+      referredBy: referral.value || '',
+      referredByLabel: referral.label || '',
       referredByOther: payload.visit.referredByOther?.trim() || '',
       bookingStatus: BOOKING_STATUS.NOT_BOOKED,
       consultationStatus: CONSULTATION_STATUS.PENDING,
-      doctorHistory: [{
+      doctorHistory: doctor ? [{
         toDoctor: doctor._id,
         toDoctorName: doctor.fullName,
         at: new Date(),
         by: actor._id,
         byName: actor.fullName,
         reason: 'Initial assignment',
-      }],
+      }] : [],
       policyAcknowledgement: {
         policyVersionId: policy.versionId,
         versionNumber: policy.version,
@@ -142,8 +156,8 @@ export async function createSubmission(payload, actor, req) {
       newValue: {
         patientCode: prepared.patient.patientCode,
         departmentCode: department.code,
-        procedure: procedure.name,
-        doctor: doctor.fullName,
+        procedure: procedure?.name || '',
+        doctor: doctor?.fullName || '',
         returningPatient: !prepared.created,
       },
       req,
@@ -152,30 +166,63 @@ export async function createSubmission(payload, actor, req) {
       submission: presentSubmission(submission),
       patient: presentPatient(prepared.patient, { includeCnic: true }),
       returningPatient: !prepared.created,
+      _notify: doctor ? {
+        doctorId: doctor._id,
+        submission: {
+          _id: submission._id,
+          patientCode: submission.patientCode,
+          patientName: submission.patientName,
+          departmentCode: submission.departmentCode,
+        },
+      } : null,
     };
   });
+  if (result?._notify) {
+    const doctor = await User.findById(result._notify.doctorId);
+    if (doctor) {
+      await notifyDoctorOfPatient({
+        doctor,
+        submission: result._notify.submission,
+        assignedBy: actor.fullName,
+        reason: 'assigned',
+      });
+    }
+    delete result._notify;
+  }
+  return result;
 }
 
-async function saveSkinDetails(submissionId, fields, session) {
-  const definitions = await withSession(MasterData.find({ type: 'SKIN_FIELD', isActive: true }), session);
-  const byKey = new Map(definitions.map((item) => [item.value, item]));
+async function mapCustomFields(departmentCode, fields, session) {
+  const { FormField } = await import('../models/FormField.js');
+  const definitions = await withSession(FormField.find({
+    departmentCode,
+    isActive: true,
+    isSystem: false,
+  }), session);
+  const byKey = new Map(definitions.map((item) => [item.key, item]));
   for (const field of fields) {
-    if (!byKey.has(field.key)) throw new ApiError(400, 'A skin field is no longer available');
+    if (!byKey.has(field.key)) continue;
   }
   for (const definition of definitions) {
-    if (definition.metadata?.required) {
-      const found = fields.find((field) => field.key === definition.value && String(field.value || '').trim());
+    if (definition.required) {
+      const found = fields.find((field) => field.key === definition.key && String(field.value || '').trim());
       if (!found) throw new ApiError(400, `${definition.label} is required`);
     }
   }
-  await SkinSubmissionDetail.create([{
-    submission: submissionId,
-    pendingClinicConfirmation: true,
-    fields: fields.map((field) => ({
+  return fields
+    .filter((field) => byKey.has(field.key))
+    .map((field) => ({
       key: field.key,
       label: byKey.get(field.key).label,
       value: String(field.value || '').slice(0, 2000),
-    })),
+    }));
+}
+
+async function saveSkinDetails(submissionId, fields, session) {
+  await SkinSubmissionDetail.create([{
+    submission: submissionId,
+    pendingClinicConfirmation: true,
+    fields: await mapCustomFields('SKIN', fields, session),
   }], mongoOpts(session));
 }
 
@@ -189,12 +236,13 @@ async function saveSurgeryDetails(submissionId, details, session) {
   stored.surgeryCost = details.surgeryCost ?? null;
   stored.followUpSessions = details.followUpSessions ?? null;
   stored.anyOther = details.anyOther?.trim() || '';
+  stored.fields = await mapCustomFields('SURGERY', details.fields || [], session);
   await SurgerySubmissionDetail.create([stored], mongoOpts(session));
 }
 
 function capabilitiesFor(actor, submission) {
   const assignedDoctor = actor.role === ROLES.DOCTOR
-    && submission.bookingStatus === BOOKING_STATUS.BOOKED
+    && submission.doctor
     && String(submission.doctor) === String(actor._id);
   return {
     canBook: actor.role === ROLES.ADMIN || actor.role === ROLES.CLINIC_MANAGER,
@@ -299,7 +347,7 @@ export async function getSubmissionDetail(id, actor) {
   const submission = await getSubmissionForActor(actor, id);
   const patient = await Patient.findById(submission.patient);
   const includeClinical = actor.role !== ROLES.CLINIC_MANAGER;
-  const [skinDetails, surgeryDetails, documents, prescriptions, remarks, history] = await Promise.all([
+  const [skinDetails, surgeryDetails, documents, prescriptions, remarks, voiceRecordings, history] = await Promise.all([
     submission.departmentCode === 'SKIN' ? SkinSubmissionDetail.findOne({ submission: submission._id }).lean() : null,
     submission.departmentCode === 'SURGERY' ? SurgerySubmissionDetail.findOne({ submission: submission._id }).lean() : null,
     Document.find({
@@ -308,6 +356,7 @@ export async function getSubmissionDetail(id, actor) {
     }).sort({ createdAt: -1 }).lean(),
     includeClinical ? loadPrescriptions([submission._id], actor, submission) : [],
     includeClinical ? loadRemarks([submission._id], actor, submission) : [],
+    includeClinical ? listVoiceRecordings(submission._id, actor) : [],
     historyFor(patient, submission, actor),
   ]);
   await markRecordOpened(actor._id, 'SUBMISSION', submission._id);
@@ -320,6 +369,7 @@ export async function getSubmissionDetail(id, actor) {
     documents: documents.map((document) => presentDocument(document, actor)),
     prescriptions,
     remarks,
+    voiceRecordings,
     history,
     capabilities: capabilitiesFor(actor, submission),
   };
@@ -445,7 +495,7 @@ function renderHistoryPdf({ patient, history, includeClinical, documentsBySubmis
         detailLine([['Booking', prettyStatus(item.bookingStatus)], ['Consultation', prettyStatus(item.consultationStatus)]]);
         detailLine([
           ['Weight', item.weightKg ? `${item.weightKg} kg` : ''],
-          ['Height', item.heightCm ? `${item.heightCm} cm` : ''],
+          ['Height', item.heightCm ? `${item.heightCm} in` : ''],
           ['Age at visit', item.ageAtSubmission],
         ]);
         detailLine([['Referred by', item.referredByOther || item.referredByLabel]]);
@@ -456,6 +506,7 @@ function renderHistoryPdf({ patient, history, includeClinical, documentsBySubmis
           detailLine([['Blood test', surgery.bloodTestStatusLabel], ['Location', surgery.locationOfSurgeryLabel]]);
           detailLine([['MRI', surgery.mriLabel], ['Cost', surgery.surgeryCost], ['Follow-up sessions', surgery.followUpSessions]]);
           if (surgery.anyOther) detailLine([['Any other', surgery.anyOther]]);
+          surgery.fields?.forEach((field) => detailLine([[field.label, field.value]]));
         }
         item.skinDetails?.fields?.forEach((field) => detailLine([[field.label, field.value]]));
         const files = documentsBySubmission.get(String(item.id)) || [];
@@ -549,7 +600,6 @@ export async function listMyPatients(query, actor) {
   const filter = await buildSubmissionFilter(scoped, actor);
   filter.doctor = actor._id;
   filter.department = { $in: actor.departments || [] };
-  filter.bookingStatus = BOOKING_STATUS.BOOKED;
   const sort = parseSort(query, ['formDate', 'createdAt', 'patientName', 'patientCode'], 'formDate');
   const [items, total] = await Promise.all([
     Submission.find(filter).sort(sort).skip(skip).limit(limit).lean(),
@@ -564,6 +614,9 @@ export async function updateBooking(id, input, actor, req) {
   }
   const submission = await Submission.findOne({ _id: id, isDeleted: false });
   if (!submission) throw new ApiError(404, 'Submission not found');
+  if (input.status === BOOKING_STATUS.BOOKED && !submission.doctor) {
+    throw new ApiError(400, 'Assign a doctor before marking the visit as booked');
+  }
   const from = submission.bookingStatus;
   if (from !== input.status) {
     submission.bookingStatus = input.status;
@@ -669,7 +722,7 @@ export async function updateOperationalRemark(id, text, actor, req) {
 
 export async function updateConsultation(id, status, actor, req) {
   const submission = await getSubmissionForActor(actor, id);
-  if (actor.role !== ROLES.DOCTOR || String(submission.doctor) !== String(actor._id) || submission.bookingStatus !== BOOKING_STATUS.BOOKED) {
+  if (actor.role !== ROLES.DOCTOR || !submission.doctor || String(submission.doctor) !== String(actor._id)) {
     throw new ApiError(403, 'Only the assigned doctor can update consultation status');
   }
   const previous = submission.consultationStatus;

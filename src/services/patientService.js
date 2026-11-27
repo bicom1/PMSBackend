@@ -106,12 +106,16 @@ function publicAnalysis(analysis, normalizedPhone) {
 }
 
 function assertDemographics(patient) {
-  if (!GENDERS.includes(patient.gender)) throw new ApiError(400, 'Gender is invalid');
-  if (!isIsoDate(patient.dateOfBirth) || patient.dateOfBirth > clinicToday()) {
-    throw new ApiError(400, 'Date of birth is invalid');
+  if (patient.gender) {
+    if (!GENDERS.includes(patient.gender)) throw new ApiError(400, 'Gender is invalid');
   }
-  const age = calculateAge(patient.dateOfBirth);
-  if (age == null || age < 0 || age > 120) throw new ApiError(400, 'Date of birth is invalid');
+  if (patient.dateOfBirth) {
+    if (!isIsoDate(patient.dateOfBirth) || patient.dateOfBirth > clinicToday()) {
+      throw new ApiError(400, 'Date of birth is invalid');
+    }
+    const age = calculateAge(patient.dateOfBirth);
+    if (age == null || age < 0 || age > 120) throw new ApiError(400, 'Date of birth is invalid');
+  }
 }
 
 export async function identifyPatient(input, actor) {
@@ -123,7 +127,7 @@ export async function identifyPatient(input, actor) {
   const normalizedPhone = normalizePhone(input.contactNumber);
   const cnicDigits = normalizeCnic(input.cnic);
   if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Enter a phone number with 7 to 15 digits');
-  if (!cnicDigits) throw new ApiError(400, 'Enter a CNIC or passport number, 6 to 20 characters');
+  if (!cnicDigits) throw new ApiError(400, 'Enter a valid CNIC (13 digits) or passport number');
   const analysis = await analyzeIdentity({
     departmentId: department._id,
     normalizedPhone,
@@ -194,7 +198,7 @@ export async function preparePatientForSubmission(payload, department, actor, se
   const normalizedPhone = normalizePhone(payload.patient.contactNumber);
   const cnicDigits = normalizeCnic(payload.patient.cnic);
   if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Enter a phone number with 7 to 15 digits');
-  if (!cnicDigits) throw new ApiError(400, 'Enter a CNIC or passport number, 6 to 20 characters');
+  if (!cnicDigits) throw new ApiError(400, 'Enter a valid CNIC (13 digits) or passport number');
   assertDemographics(payload.patient);
   const normalized = normalizeName(payload.patient.fullName);
   if (!normalized) throw new ApiError(400, 'Patient name is required');
@@ -247,13 +251,13 @@ export async function preparePatientForSubmission(payload, department, actor, se
       cnicEncrypted: encryptString(cnicDigits),
       cnicHash,
       cnicLast4: cnicDigits.slice(-4),
-      dateOfBirth: payload.patient.dateOfBirth,
-      gender: payload.patient.gender,
-      nationality: payload.patient.nationality,
-      occupation: payload.patient.occupation,
+      dateOfBirth: payload.patient.dateOfBirth || '',
+      gender: payload.patient.gender || '',
+      nationality: payload.patient.nationality || '',
+      occupation: payload.patient.occupation || '',
       occupationOther: payload.patient.occupationOther || '',
-      city: payload.patient.city,
-      address: payload.patient.address.trim(),
+      city: payload.patient.city || '',
+      address: String(payload.patient.address || '').trim(),
       createdBy: actor._id,
     }], mongoOpts(session));
     patient = created[0];
@@ -537,7 +541,7 @@ export async function correctPatient(id, input, actor, req) {
   assertDemographics(input);
   const cnicDigits = normalizeCnic(input.cnic);
   const normalizedPhone = normalizePhone(input.contactNumber);
-  if (!cnicDigits) throw new ApiError(400, 'Enter a CNIC or passport number, 6 to 20 characters');
+  if (!cnicDigits) throw new ApiError(400, 'Enter a valid CNIC (13 digits) or passport number');
   if (!isValidPhone(normalizedPhone)) throw new ApiError(400, 'Enter a phone number with 7 to 15 digits');
   const nextHash = hashCnic(cnicDigits);
   if (nextHash !== patient.cnicHash) {

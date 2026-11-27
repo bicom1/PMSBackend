@@ -14,7 +14,7 @@ import { Patient } from '../models/Patient.js';
 
 function canEditPrescription(actor, submission, prescription) {
   return actor.role === ROLES.DOCTOR
-    && submission.bookingStatus === 'BOOKED'
+    && submission.doctor
     && String(submission.doctor) === String(actor._id)
     && String(prescription.doctor) === String(actor._id)
     && String(prescription.submission) === String(submission._id);
@@ -58,8 +58,8 @@ export async function loadRemarks(submissionIds, actor, anchorSubmission) {
     createdAt: remark.createdAt,
     canEdit: actor.role === ROLES.DOCTOR
       && anchorSubmission
+      && anchorSubmission.doctor
       && String(anchorSubmission.doctor) === String(actor._id)
-      && anchorSubmission.bookingStatus === 'BOOKED'
       && String(remark.doctor) === String(actor._id)
       && String(remark.submission) === String(anchorSubmission._id),
     versions: versions.filter((version) => String(version.remark) === String(remark._id)).map((version) => ({
@@ -250,7 +250,7 @@ function renderPdf({ settings, patient, submission, prescription, version }) {
     doc.text(`Procedure: ${submission.procedureName}`);
     doc.text(`Doctor: ${prescription.doctorName}`);
     doc.text(`Date: ${version.prescriptionDate}`);
-    doc.text(`Version: ${version.versionNumber}`);
+    doc.text(`Prescription date: ${version.prescriptionDate || ''}`);
     doc.moveDown();
     version.medicines.forEach((medicine, index) => {
       doc.fontSize(12).text(`${index + 1}. ${medicine.name} — ${medicine.dose}`);

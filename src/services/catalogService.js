@@ -96,17 +96,29 @@ export async function listMasterData(query = {}) {
   if (query.active === 'true') filter.isActive = true;
   if (query.departmentCode) {
     const department = await Department.findOne({ code: query.departmentCode });
-    if (department) filter.department = department._id;
+    if (department) {
+      filter.$or = [{ department: department._id }, { department: null }];
+    }
   }
   return MasterData.find(filter).sort({ sortOrder: 1, label: 1 }).limit(300);
 }
 
 export async function createMasterData(input, actor, req) {
   const value = (input.value || slugify(input.label)).toLowerCase();
+  let department = null;
+  if (input.departmentCode || input.type === 'SKIN_FIELD' || input.type === 'SURGERY_FIELD') {
+    const code = input.departmentCode
+      || (input.type === 'SKIN_FIELD' ? 'SKIN' : input.type === 'SURGERY_FIELD' ? 'SURGERY' : null);
+    if (code) {
+      department = await Department.findOne({ code, isActive: true });
+      if (!department) throw new ApiError(400, 'Department not found');
+    }
+  }
   const record = await MasterData.create({
     type: input.type,
     label: input.label.trim(),
     value,
+    department: department?._id || null,
     isActive: input.isActive !== false,
     sortOrder: input.sortOrder || 0,
     allowOther: Boolean(input.allowOther),
@@ -125,9 +137,10 @@ export async function createMasterData(input, actor, req) {
 
 export async function updateMasterData(id, input, actor, req) {
   const record = await MasterData.findById(id);
-  if (!record) throw new ApiError(404, 'Master data item not found');
-  const previous = { label: record.label, isActive: record.isActive, sortOrder: record.sortOrder };
+  if (!record) throw new ApiError(404, 'Form field not found');
+  const previous = { label: record.label, value: record.value, isActive: record.isActive, sortOrder: record.sortOrder, metadata: record.metadata };
   if (input.label) record.label = input.label.trim();
+  if (input.value) record.value = slugify(input.value);
   if (input.isActive !== undefined) record.isActive = input.isActive;
   if (input.sortOrder !== undefined) record.sortOrder = input.sortOrder;
   if (input.allowOther !== undefined) record.allowOther = input.allowOther;
@@ -139,19 +152,46 @@ export async function updateMasterData(id, input, actor, req) {
     entityType: 'MasterData',
     entityId: record._id,
     previousValue: previous,
-    newValue: { label: record.label, isActive: record.isActive },
+    newValue: { label: record.label, value: record.value, isActive: record.isActive, metadata: record.metadata },
     req,
   });
   return record;
 }
 
-export async function getCurrentPolicy() {
-  const policy = await PolicyNote.findOne({ key: 'PATIENT_ACK', isActive: true });
+export async function deleteMasterData(id, actor, req) {
+  const record = await MasterData.findById(id);
+  if (!record) throw new ApiError(404, 'Form field not found');
+  const previous = { type: record.type, label: record.label, value: record.value };
+  await record.deleteOne();
+  await writeAudit({
+    actor,
+    action: AUDIT.MASTER_DATA_CHANGED,
+    entityType: 'MasterData',
+    entityId: record._id,
+    previousValue: previous,
+    newValue: { deleted: true },
+    req,
+  });
+  return { id };
+}
+
+function resolvePolicyKey(departmentCode) {
+  const code = String(departmentCode || '').toUpperCase();
+  if (code === 'SKIN') return 'PATIENT_ACK_SKIN';
+  if (code === 'SURGERY') return 'PATIENT_ACK_SURGERY';
+  throw new ApiError(400, 'Select Skin or Surgery for this policy');
+}
+
+export async function getCurrentPolicy(departmentCode = 'SKIN') {
+  const key = resolvePolicyKey(departmentCode);
+  const policy = await PolicyNote.findOne({ key, isActive: true });
   if (!policy?.currentVersion) throw new ApiError(500, 'Clinic policy is not configured');
   const version = await PolicyVersion.findById(policy.currentVersion);
   if (!version) throw new ApiError(500, 'Clinic policy is not configured');
   return {
     id: policy._id,
+    key: policy.key,
+    departmentCode: String(departmentCode).toUpperCase(),
     title: policy.title,
     versionId: version._id,
     version: version.version,
@@ -159,14 +199,22 @@ export async function getCurrentPolicy() {
   };
 }
 
-export async function listPolicyVersions() {
-  const policy = await PolicyNote.findOne({ key: 'PATIENT_ACK' });
+export async function listPolicyVersions(departmentCode = 'SKIN') {
+  const key = resolvePolicyKey(departmentCode);
+  const policy = await PolicyNote.findOne({ key });
   if (!policy) return [];
-  return PolicyVersion.find({ policy: policy._id }).sort({ version: -1 });
+  const versions = await PolicyVersion.find({ policy: policy._id }).sort({ version: -1 }).lean();
+  return versions.map((version) => ({
+    ...version,
+    departmentCode: String(departmentCode).toUpperCase(),
+    title: policy.title,
+  }));
 }
 
 export async function publishPolicy(input, actor, req) {
-  const policy = await PolicyNote.findOne({ key: 'PATIENT_ACK' });
+  const departmentCode = String(input.departmentCode || '').toUpperCase();
+  const key = resolvePolicyKey(departmentCode);
+  const policy = await PolicyNote.findOne({ key });
   if (!policy) throw new ApiError(500, 'Clinic policy is not configured');
   const latest = await PolicyVersion.findOne({ policy: policy._id }).sort({ version: -1 });
   const version = await PolicyVersion.create({
@@ -183,10 +231,10 @@ export async function publishPolicy(input, actor, req) {
     action: AUDIT.POLICY_CHANGED,
     entityType: 'PolicyVersion',
     entityId: version._id,
-    newValue: { version: version.version, itemCount: version.items.length },
+    newValue: { departmentCode, version: version.version, itemCount: version.items.length },
     req,
   });
-  return getCurrentPolicy();
+  return getCurrentPolicy(departmentCode);
 }
 
 async function profileRecord() {

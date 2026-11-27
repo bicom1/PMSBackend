@@ -26,7 +26,12 @@ async function assertDepartments(role, departmentIds) {
 
 export async function listDoctors(query = {}) {
   const filter = { role: ROLES.DOCTOR, isActive: true };
-  if (query.departmentId) filter.departments = query.departmentId;
+  if (query.departmentId) {
+    filter.departments = query.departmentId;
+  } else if (query.departmentCode) {
+    const department = await Department.findOne({ code: query.departmentCode, isActive: true }).select('_id');
+    if (department) filter.departments = department._id;
+  }
   const users = await User.find(filter).sort({ fullName: 1 });
   return hydrate(users);
 }
